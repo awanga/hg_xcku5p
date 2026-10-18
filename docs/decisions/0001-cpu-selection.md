@@ -69,6 +69,7 @@ Resource (synthesis): ~6.95k LUT (3.2 %), 5.4k FF, 22 BRAM tiles (4.6 %), 16 DSP
   under 10-15 % BRAM; revisit when the SoC is assembled.
 - Next levers for DDR traffic, no BRAM: an L2 in UltraScale+ URAM (the part has 64 URAM, unused by the CPU), prefetch tuning.
 - RV32/VexRiscv-SMP is no longer the primary path (RV64 preferred); it stays as a measured-by-synthesis baseline only.
+Interim pick approved by the user (2026-10-18). Core-only out-of-context place-and-route met timing at 300 MHz (WNS +0.09 ns), so the core is not the clock limiter.
 Caveat: the recommendation rests on RTL simulation with a fixed-latency memory; Fmax, Linux workloads, and the real DDR4 latency can change it.
 
 ## Preliminary assessment (not a decision)
@@ -98,3 +99,12 @@ RTL except the pin/bank knowledge and test design; the AMD IP stays the vendor-s
 ## Evidence
 README.md/LICENSE of each repo (GitHub, read 2026-10-18); LiteX `cpu/*/core.py` variants; Buildroot mailing-list history for RV32 glibc;
 LiteDRAM `usddrphy.py` header; Tampere thesis for CVA6 CoreMark (third party, single data point).
+
+## Planned study: UltraRAM L2 (user request 2026-10-18, not started)
+Goal: find the performance-per-resource sweet spot of an L2 cache in UltraRAM and check that enough URAM stays free for future
+peripherals (frame buffers, DMA/packet buffers, trace). XCKU5P has 64 URAM288 (288 Kb each, about 32 KiB of data with 64-bit width;
+64 blocks = about 2 MiB total, from the device resource tables: confirm with `report_utilization`). Plan: (1) check what L2/LLC
+the Vexii TileLink SoC offers and whether it infers URAM (`ram_style = ultra`) or needs a wrapper; (2) sweep L2 size
+(for example 128 KiB / 256 KiB / 512 KiB / 1 MiB = roughly 4 / 8 / 16 / 32 URAM) x associativity with the same membench/CoreMark
+plus a Linux-like workload; (3) report speedup per URAM and per LUT, DDR traffic reduction, Fmax impact, and the URAM left over.
+Decision rule: pick the smallest L2 whose marginal gain is still large, and keep at least half the URAM free unless a measured gain justifies more.

@@ -24,7 +24,9 @@
   preferred with LiteDRAM USPDDRPHY kept as alternative pending hardware speed. README updated (needs approval before commit).
 - Status: VexiiRiscv benchmarks (RTL sim): CoreMark 3.2/MHz with predictor (+30 %), prefetch halves seq-miss cost at 0 BRAM,
   32K cache needs 42 BRAM. Interim pick: RV64, 16K/16K 4-way + BTB/RAS/gshare + prefetch (22 BRAM). See validation/cpu-benchmarks.md.
-- Next (CPU, no board needed): implemented Fmax in a minimal SoC (place/route); optional URAM L2; Linux-like workload; VexRiscv-SMP sim baseline (not done).
+- Status: core-only OOC place-and-route Fmax: timing met at 300 MHz target (WNS +0.09 ns); SoC clock will be set by fabric/DDR4, plan 150-200 MHz.
+- Future (user request): UltraRAM L2 sweet-spot study incl. URAM left for peripherals (decisions/0001, end).
+- Next (CPU, no board needed): minimal SoC (CPU + AXI + DDR4 IP) place/route; URAM L2 study; Linux-like workload; VexRiscv-SMP sim baseline (not done).
 - Next: owner full pin list reconciles with schematic-pin-extract.csv; then Phase 1 DDR4/flash docs, CPU research
   (VexRiscv/VexiiRiscv/CVA6 Linux status); Vivado steps once installed.
 - Open: first `release/` versioning scheme.

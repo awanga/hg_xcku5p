@@ -53,3 +53,18 @@ Findings:
 
 Limitations: synthetic test and CoreMark only (no Linux/real workload); fixed-latency memory; 10 CoreMark iterations (below the
 10-second official rule; the per-MHz figure is cycle-exact for the iterations run); one seed; no frequency data (post-route Fmax pending).
+
+## Out-of-context place-and-route Fmax (Vivado 2026.1, 2026-10-18)
+VexiiRiscv RV64, 16K/16K 4-way, BTB+RAS+gshare, prefetch (`v64_16k4w_pf`), native cache buses (no AXI adapters, no SoC fabric).
+`opt_design; place_design; phys_opt_design; route_design; phys_opt_design`, default directives, one run each, clock 1 port.
+| Target clock | Port I/O delay | WNS (ns) | WHS (ns) | Estimated Fmax = 1/(T-WNS) |
+|---|---|---|---|---|
+| 5.00 ns (200 MHz) | none (reg-to-reg) | +0.614 | +0.037 | 228 MHz |
+| 4.00 ns (250 MHz) | none | +0.274 | +0.031 | 268 MHz |
+| 3.33 ns (300 MHz) | none | +0.091 | +0.030 | 309 MHz |
+| 5.00 ns | 40 % of period in/out | +0.322 | +0.019 | 214 MHz |
+| 4.00 ns | 40 % of period in/out | +0.259 | +0.041 | 267 MHz |
+All five runs met timing (the tool stops optimising once met, so the real limit is above the highest target tried, about 300 MHz).
+Caveats: out of context (ideal clock tree, no neighbouring logic, no congestion from DDR4/AXI/peripherals); the estimate says the core
+itself is not the limit. The SoC clock will be set by the AXI/interconnect, the DDR4 controller clock relationship (ui_clk 200 MHz at DDR4-1600)
+and cache-bus-to-AXI adapters; 150-200 MHz is the realistic planning range until a SoC is placed.
