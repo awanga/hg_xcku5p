@@ -44,6 +44,20 @@ pruned; treat that row as unreliable until re-run inside a wrapper. (2) Cache si
 Pins: VexiiRiscv dev `0dc189e`, SpinalHDL `58837d3`; CVA6 `v5.3.0` (`2ef1c1b`); pythondata-cpu-vexriscv_smp `0b753ec`.
 Reproduce: `fpga/scripts/cpu/gen_vexii.sh`, `ooc_verilog.tcl`, `ooc_cva6.tcl` (arguments in docs/validation/cpu-ooc-synthesis.md).
 
+## RV64 BRAM sweep: VexiiRiscv RV64IMA + S, synthesis only (2026-10-18)
+Same generator arguments as above except caches/predictors (L1 sets 64, 64 B lines; size = ways x 4 KB each for I and D).
+| Variant | I$/D$ | Branch predictor | LUT | FF | BRAM tiles | DSP |
+|---|---|---|---|---|---|---|
+| base | 16K/16K, 4-way | BTB+RAS+gshare | 6359 | 4805 | 22 | 16 |
+| no predictor | 16K/16K, 4-way | none | 6040 | 4422 | 20 | 16 |
+| medium | 8K/8K, 2-way | BTB+RAS+gshare | 5806 | 4445 | 12 | 16 |
+| medium, no predictor | 8K/8K, 2-way | none | 5487 | 4061 | 10 | 16 |
+| small | 4K/4K, direct-mapped | none | 5144 | 3870 | 5 | 16 |
+BRAM is dominated by cache arrays (about 2 tiles per 4 KB-way pair plus tags); the predictor costs about 2 tiles and ~300 LUT.
+(`--with-ras`/`--with-gshare` require `--with-btb`.) The device has 480 tiles, so even 22 tiles is 4.6 %; the question is
+mostly what the memory system leaves for custom datapaths. Performance of each variant is **not measured yet**: the BRAM-vs-speed
+knee needs CoreMark/Linux runs (next step). Small caches also raise DDR4 traffic, which matters with a 32-bit DDR4 bus.
+
 ## Preliminary assessment (not a decision)
 - Applying the README acceptance rule: CVA6 RV32 costs about 4.6x the LUTs of VexiiRiscv RV32 for no published CPI advantage
   (published CoreMark/MHz is lower than Vexii's). It would need a measured multi-fold performance gain to qualify; none is known.
