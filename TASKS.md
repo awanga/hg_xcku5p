@@ -18,6 +18,9 @@
   wired to FPGA; HDMI DDC not wired to FPGA; SD has no CD/WP/UHS; VADJ jumper must be 1.8 V for UART; FT232H 3.3 V -> bank0 1.8 V JTAG check.
 - Status: owner confirmed LED, key, MS5611 and PCIe x4 pinouts (2026-10-18); PCIe PERST# 3.3 V into bank 66 (VADJ) flagged.
 - Decision: Ethernet runs GMII (board default); RGMII optional via R158 rework (0003-ethernet-gmii.md).
+- Status: DDR4 bring-up design built (synth/impl/bitstream, timing met, tCK 1250) with RTL unit tests; NOT run on the board.
+  See docs/validation/ddr4-bringup.md and decisions/0004. Open: PAR undriven (no CA parity), DCIRST-1 warning.
+- Next (needs board on USB + JTAG path: FT232H, not Vivado-native -> openFPGALoader): program, read UART1 at 115200.
 - Next: owner full pin list reconciles with schematic-pin-extract.csv; then Phase 1 DDR4/flash docs, CPU research
   (VexRiscv/VexiiRiscv/CVA6 Linux status); Vivado steps once installed.
 - Open: first `release/` versioning scheme.
