@@ -25,3 +25,6 @@ __pycache__/
 *.key
 .env
 credentials*
+
+# Third-party vendor documents (redistribution rights unknown); keep local
+docs/external/
