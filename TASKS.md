@@ -8,14 +8,14 @@
   Reason: user direction. Status: README/AGENTS/TASKS updated.
 - Decision: board memory/flash (owner-stated, NOT yet schematic-verified): config flash MT25QU256ABA1EW9-0SIT;
   DDR4 2 x MT40A256M16GE-075E, 32-bit bus (1 GiB). Status: recorded in docs/hardware/board-inventory.md.
-- Blocker: Vivado 2026.1 cannot run for XCKU5P yet. (1) Kintex UltraScale+ device support not installed (user is
-  downloading; install via /opt/Xilinx/xic). (2) First launch: "valid license was not found"; on-disk `.lic` files only
+- Blocker: Vivado 2026.1 cannot launch. KU+ device support is now installed (kintexuplus/public present, 2026-10-18). Remaining: first launch: "valid license was not found"; on-disk `.lic` files only
   grant ISE_Embedded_Edition. Next (user): finish KU+ install, get a Vivado ML Standard license. Re-probe with scratchpad probe.tcl.
 - Decision: MIT license (docs/licensing.md); deps checked, no conflict. Schematic PDF kept local (gitignored).
 - Status: schematic reviewed (docs/hardware/board-inventory.md); user clocks/UART pins confirmed. Findings to resolve:
   JTAG is FT232H (not hub-attached EEPROM; EEPROM is on FT232H); ETH mode GMII vs RGMII strap unclear; MDC/MDIO, INT not
   wired to FPGA; HDMI DDC not wired to FPGA; SD has no CD/WP/UHS; VADJ jumper must be 1.8 V for UART; FT232H 3.3 V -> bank0 1.8 V JTAG check.
 - Status: owner confirmed LED, key, MS5611 and PCIe x4 pinouts (2026-10-18); PCIe PERST# 3.3 V into bank 66 (VADJ) flagged.
+- Decision: Ethernet runs GMII (board default); RGMII optional via R158 rework (0003-ethernet-gmii.md).
 - Next: owner full pin list reconciles with schematic-pin-extract.csv; then Phase 1 DDR4/flash docs, CPU research
   (VexRiscv/VexiiRiscv/CVA6 Linux status); Vivado steps once installed.
 - Open: first `release/` versioning scheme.

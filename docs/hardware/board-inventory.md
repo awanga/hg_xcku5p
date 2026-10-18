@@ -53,9 +53,9 @@ Net names in the PDF netlist have `_` replaced by `0`; the CSV is decoded agains
 
 ## Ethernet — RTL8211EG (U30), RJ45 with integrated magnetics (J4)
 - FPGA side is an 8-bit data path: TXD0-7, RXD0-7, GTX_CLK, TXCLK, RXCLK, TX_EN/ER, RX_DV/ER, RSTB (all bank 87, 3.3 V). **S-text**
-- Note on the sheet: "GND: GMII (default)", "3V3: RGMII" at the COL strap; the strap resistors as drawn are ambiguous
-  (R153 to 3.3 V, R159 to GND, R158 NC; RXD6/RXD7 pulled to 3.3 V via R156/R157). Mode **unresolved**: needs a zoomed look
-  and the RTL8211EG datasheet. GMII 1000 Mb/s through 3.3 V HDIO pins is a timing risk at 125 MHz; RGMII would be easier.
+- Mode (**owner-confirmed 2026-10-18**): default strap is **GMII**; populating R158 (3.3 V on the COL strap) selects RGMII.
+  Project decision: operate in GMII; keep RGMII as an option (docs/decisions/0003-ethernet-gmii.md). The board is
+  shipped GMII, so no rework is needed.
 - **MDC/MDIO have no FPGA pin** (PHY pulls them to 3.3 V; nets ETHPL_MDC/MDIO exist only on the PHY sheet), likewise INT,
   COL, CRS. The PHY runs on strap defaults only; Linux cannot read PHY registers. **S-text**
 - PHY crystal 25 MHz; LED0/LED1 to RJ45 LEDs. CLK125 unconnected.
