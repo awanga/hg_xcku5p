@@ -1,0 +1,27 @@
+# Generated build output
+artifacts/
+build/
+*.log
+*.jou
+*.str
+.Xil/
+*.runs/
+*.cache/
+*.gen/
+*.hw/
+*.ip_user_files/
+*.sim/
+*.srcs/
+*.xpr
+*.bit
+*.bin
+*.ltx
+*.dcp
+__pycache__/
+*.pyc
+# Secrets and licenses
+*.lic
+*.pem
+*.key
+.env
+credentials*
