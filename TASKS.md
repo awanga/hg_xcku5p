@@ -8,8 +8,10 @@
   Reason: user direction. Status: README/AGENTS/TASKS updated.
 - Decision: board memory/flash (owner-stated, NOT yet schematic-verified): config flash MT25QU256ABA1EW9-0SIT;
   DDR4 2 x MT40A256M16GE-075E, 32-bit bus (1 GiB). Status: recorded in docs/hardware/board-inventory.md.
-- Blocker: Vivado 2026.1 cannot launch. KU+ device support is now installed (kintexuplus/public present, 2026-10-18). Remaining: first launch: "valid license was not found"; on-disk `.lic` files only
-  grant ISE_Embedded_Edition. Next (user): finish KU+ install, get a Vivado ML Standard license. Re-probe with scratchpad probe.tcl.
+- Status: Vivado 2026.1 works for xcku5p-ffvb676-2-i with the free license (scripts/check-env.sh PASS: synth, place, route, bitstream
+  on a trivial design; simulation/board evidence: none). Catalog has ddr4, xdma, axi_ethernet, tri_mode_ethernet_mac,
+  axi_quad_spi, axi_uartlite, axi_gpio, axi_iic, microblaze_riscv; no axi_sdc (use another SD controller). Whether
+  axi_ethernet/TEMAC need a paid license for bitstream generation is untested.
 - Decision: MIT license (docs/licensing.md); deps checked, no conflict. Schematic PDF kept local (gitignored).
 - Status: schematic reviewed (docs/hardware/board-inventory.md); user clocks/UART pins confirmed. Findings to resolve:
   JTAG is FT232H (not hub-attached EEPROM; EEPROM is on FT232H); ETH mode GMII vs RGMII strap unclear; MDC/MDIO, INT not
