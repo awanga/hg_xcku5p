@@ -22,7 +22,9 @@
   CoreMark yet). CVA6 dropped (user, 2026-10-18).
 - Decision (2026-10-18): finalists VexiiRiscv + VexRiscv-SMP; prefer 64-bit but minimise BRAM; LiteEth accepted; AMD DDR4 IP
   preferred with LiteDRAM USPDDRPHY kept as alternative pending hardware speed. README updated (needs approval before commit).
-- Next (CPU, no board needed): RV64 BRAM-variant sweep, CoreMark per core in Verilator, implemented Fmax in a minimal SoC.
+- Status: VexiiRiscv benchmarks (RTL sim): CoreMark 3.2/MHz with predictor (+30 %), prefetch halves seq-miss cost at 0 BRAM,
+  32K cache needs 42 BRAM. Interim pick: RV64, 16K/16K 4-way + BTB/RAS/gshare + prefetch (22 BRAM). See validation/cpu-benchmarks.md.
+- Next (CPU, no board needed): implemented Fmax in a minimal SoC (place/route); optional URAM L2; Linux-like workload; VexRiscv-SMP sim baseline (not done).
 - Next: owner full pin list reconciles with schematic-pin-extract.csv; then Phase 1 DDR4/flash docs, CPU research
   (VexRiscv/VexiiRiscv/CVA6 Linux status); Vivado steps once installed.
 - Open: first `release/` versioning scheme.

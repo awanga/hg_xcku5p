@@ -58,6 +58,19 @@ BRAM is dominated by cache arrays (about 2 tiles per 4 KB-way pair plus tags); t
 mostly what the memory system leaves for custom datapaths. Performance of each variant is **not measured yet**: the BRAM-vs-speed
 knee needs CoreMark/Linux runs (next step). Small caches also raise DDR4 traffic, which matters with a 32-bit DDR4 bus.
 
+## Interim recommendation after simulation (2026-10-18; see docs/validation/cpu-benchmarks.md)
+**VexiiRiscv RV64IMA + S/U, 16K I$ / 16K D$ 4-way, BTB+RAS+gshare, hardware prefetch (fetch `nl`, LSU `rpt`, refill count 2).**
+Resource (synthesis): ~6.95k LUT (3.2 %), 5.4k FF, 22 BRAM tiles (4.6 %), 16 DSP. Rationale:
+- The predictor is worth +30 % CoreMark for 2 tiles; keep it. RV64 costs no CoreMark/MHz versus RV32.
+- With BRAM still below 10 % of the device, per the user's rule the memory system is tuned to cut DDR stalls rather than save tiles:
+  prefetch halves sequential miss cost at zero BRAM; 4-way avoids the conflict thrash seen with direct-mapped.
+- 32K/32K 8-way (42 tiles, 8.8 %) only helps working sets between 16 and 32 KB and is left as an option pending a real (Linux) workload.
+  Counting the DDR4 controller (~25 tiles measured in the bring-up design) and LiteEth/peripherals, the CPU choice should keep the whole SoC
+  under 10-15 % BRAM; revisit when the SoC is assembled.
+- Next levers for DDR traffic, no BRAM: an L2 in UltraScale+ URAM (the part has 64 URAM, unused by the CPU), prefetch tuning.
+- RV32/VexRiscv-SMP is no longer the primary path (RV64 preferred); it stays as a measured-by-synthesis baseline only.
+Caveat: the recommendation rests on RTL simulation with a fixed-latency memory; Fmax, Linux workloads, and the real DDR4 latency can change it.
+
 ## Preliminary assessment (not a decision)
 - Applying the README acceptance rule: CVA6 RV32 costs about 4.6x the LUTs of VexiiRiscv RV32 for no published CPI advantage
   (published CoreMark/MHz is lower than Vexii's). It would need a measured multi-fold performance gain to qualify; none is known.
