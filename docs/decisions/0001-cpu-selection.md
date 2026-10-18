@@ -1,11 +1,19 @@
 # 0001 — CPU selection
 
-- Status: proposed (no finalist approved; only synthesis-level measurements)
+- Status: finalists approved 2026-10-18 (VexiiRiscv, VexRiscv-SMP); final CPU choice pending measurements
 - Date: 2026-10-18 (study started)
+
+## Decisions recorded (user, 2026-10-18)
+- Finalists approved: **VexiiRiscv** and **VexRiscv-SMP** (baseline). **CVA6 dropped**; its numbers below are kept as the reason.
+- Prefer a **64-bit** CPU in general, but **minimize BRAM**: a larger BRAM footprint is accepted only for a sufficiently large
+  measured performance gain (README acceptance rule). VexRiscv-SMP is RV32 only, so it remains the 32-bit/low-BRAM baseline.
+- DDR4: prefer the AMD DDR4 IP and the existing bring-up work; **LiteDRAM `USPDDRPHY` stays an alternative**; the final choice
+  waits for functional speed measured on hardware (see 0004). The SoC integration path follows from that choice (see below).
+- Ethernet: LiteEth accepted (0003); other MACs (e.g. axi_ethernetlite) remain fallbacks.
 
 ## Context
 Main CPU must run an upstream-LTS Linux with MMU on XCKU5P-FFVB676-2-i and leave fabric for custom AXI datapaths.
-Scope (user decision 2026-10-18): VexRiscv/VexRiscv-SMP, VexiiRiscv, CVA6. MicroBlaze V and Rocket Chip were removed.
+Scope (user decision 2026-10-18): VexRiscv/VexRiscv-SMP, VexiiRiscv, CVA6 (CVA6 later dropped, see above). MicroBlaze V and Rocket Chip were removed.
 Upstream Linux supports RISC-V (RV32 and RV64, MMU) without a per-CPU port; a candidate needs M/A/S/U, Sv32 or Sv39, a PLIC and
 a timer (CLINT/ACLINT or SBI timer), and an SBI firmware (OpenSBI). The core choice is mainly an integration, resource and
 performance question.

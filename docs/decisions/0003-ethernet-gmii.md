@@ -21,7 +21,7 @@ the same physical pins, so an RGMII variant is a gateware/parameter change plus 
 - RXCLK (D14) is an HDGC pin; GTX_CLK (E13) is driven by the FPGA; TXCLK (C13) is only for 10/100 modes.
 - 10/100 operation uses the same GMII lanes (nibble) and TXCLK; software must handle speed switching without MDIO
   (PHY autonegotiates; MAC speed must be learned some other way, e.g. fixed 1000 Mb/s or RXD inter-frame status). Open item.
-- MAC candidates (kept open until the CPU/SoC path is chosen; no paid TEMAC licence available):
+- **LiteEth accepted as the primary MAC (user, 2026-10-18).** Other candidates stay as fallbacks (no paid TEMAC licence available):
   - LiteEth: BSD-2-Clause, GMII and RGMII PHYs, 1 Gb/s, upstream Linux `liteeth` driver; natural with a LiteX SoC.
   - AMD `axi_ethernetlite` (free): **MII only, 10/100 Mb/s**, upstream `xilinx_emaclite` driver. With this board the PHY is
     strapped GMII and MDIO is not wired, so the link partner/switch must be forced to 100 Mb/s (otherwise the PHY will negotiate
