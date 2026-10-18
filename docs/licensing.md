@@ -9,7 +9,7 @@ source files (comments/docs excepted).
 |---|---|---|
 | VexRiscv | MIT (GitHub API) | Compatible; keep notice if vendored. |
 | VexiiRiscv | MIT (GitHub API) | Compatible. |
-| CVA6 | Solderpad Hardware License v0.51 (Apache-2.0-style, hardware patent grant) | Permissive; compatible. Retain its LICENSE/NOTICE and file headers; cannot be relicensed to MIT. |
+| CVA6 | Core files: `Apache-2.0 WITH SHL-2.0` (Flist header); top-level LICENSE reads SHL 0.51; submodules carry their own (BSD/MIT/Apache) | Permissive; compatible. Retain LICENSE/NOTICE and headers; cannot be relicensed to MIT. Audit per-submodule licences before vendoring. |
 | SpinalHDL | core LGPL, lib MIT (upstream LICENSE) | Used as a generator tool; generated Verilog is a tool output, but confirm the emitted lib components' licenses when pinning. |
 | LiteX | BSD-2-Clause | Compatible. linux-on-litex-vexriscv: BSD-2-Clause. |
 | Linux kernel, local patches | GPL-2.0-only (+ syscall note) | Not MIT: files under `linux/patches/` carry GPL-2.0 SPDX. Device-tree sources: `GPL-2.0 OR MIT` (upstream norm). Kernel/rootfs binaries are distributed under their own licenses. |

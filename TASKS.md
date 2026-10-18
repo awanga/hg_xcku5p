@@ -18,6 +18,11 @@
   wired to FPGA; HDMI DDC not wired to FPGA; SD has no CD/WP/UHS; VADJ jumper must be 1.8 V for UART; FT232H 3.3 V -> bank0 1.8 V JTAG check.
 - Status: owner confirmed LED, key, MS5611 and PCIe x4 pinouts (2026-10-18); PCIe PERST# 3.3 V into bank 66 (VADJ) flagged.
 - Decision: Ethernet runs GMII (board default); RGMII optional via R158 rework (0003-ethernet-gmii.md).
+- Status: CPU study (decisions/0001): VexiiRiscv RV32 4.4k LUT, VexRiscv SMP 5.8k, CVA6 RV32 20.6k (synthesis only, no
+  CoreMark yet). CVA6 dropped (user, 2026-10-18).
+- Decision (2026-10-18): finalists VexiiRiscv + VexRiscv-SMP; prefer 64-bit but minimise BRAM; LiteEth accepted; AMD DDR4 IP
+  preferred with LiteDRAM USPDDRPHY kept as alternative pending hardware speed. README updated (needs approval before commit).
+- Next (CPU, no board needed): RV64 BRAM-variant sweep, CoreMark per core in Verilator, implemented Fmax in a minimal SoC.
 - Next: owner full pin list reconciles with schematic-pin-extract.csv; then Phase 1 DDR4/flash docs, CPU research
   (VexRiscv/VexiiRiscv/CVA6 Linux status); Vivado steps once installed.
 - Open: first `release/` versioning scheme.
@@ -57,7 +62,7 @@
 
 ## Phase 2 — CPU, SoC and build-system decisions
 
-- [ ] Evaluate VexRiscv/VexRiscv-SMP, VexiiRiscv, and CVA6 against a common rubric.
+- [-] Evaluate VexRiscv/VexRiscv-SMP, VexiiRiscv, and CVA6 against a common rubric.
   - Acceptance: `docs/decisions/0001-cpu-selection.md` includes Linux port status, MMU, ISA width, toolchain, debug, licensing, integration complexity, estimated/actual area, Fmax, DDR performance, and remaining fabric.
 - [ ] Select at least two feasible finalists and establish a baseline synthesis/implementation flow.
   - Acceptance: reports are generated for the actual XCKU5P part with board constraints; unknown/unsupported candidates are not scored as measured.
