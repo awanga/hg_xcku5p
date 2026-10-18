@@ -9,6 +9,10 @@ Two MT40A256M16GE-075E on a 32-bit bus (docs/hardware/board-inventory.md), banks
 single CS/CKE/ODT/CK pair, PAR and ALERT_n wired to the FPGA.
 
 ## Decision
+User direction 2026-10-18: prefer the AMD DDR4 IP and leverage this bring-up; defer the final choice until functional speed is
+known on hardware. LiteDRAM `USPDDRPHY` (header: DDR4 up to 1866 MT/s, needs >= 300 MHz IDELAY reference clock) is the alternative.
+Configuration below is the bring-up baseline.
+
 AMD DDR4 SDRAM (UltraScale+) IP, `Complete_Memory_Controller`, AXI4 interface (256-bit, 30-bit address = 1 GiB),
 DM_NO_DBI, no ECC, no CA parity, 100 MHz differential system clock. Baseline **tCK = 1250 ps (DDR4-1600, ui_clk 200 MHz)**.
 The IP accepts a 100 MHz input at tCK 750 (2666), 1000 (2000), 1250 (1600) and 1500 ps; it rejected 833, 937, 1071, 1125 ps.
