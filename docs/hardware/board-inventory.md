@@ -69,11 +69,17 @@ Net names in the PDF netlist have `_` replaced by `0`; the CSV is decoded agains
 - PL_I2C: SCL AB14, SDA W16, 2.2K pull-ups, BL24C02 (U4). **S-text/S-image**
 - Second bus "SCL/SDA" (A9/B9, bank 86, 4.7K pull-ups): two BL24C256 (U25, U16). Address straps not read. **S-image, verify**
 - FMC_SCL/FMC_SDA (K9/K10): FMC connector EEPROM bus. **S-image, verify**
-- MS5611-01BA03 (U8) wired as **SPI** (PS=GND): CSB B10, SCLK B11, SDI C11, SDO A10, 100R series, 3.3 V. **S-text/S-image**
+- MS5611-01BA03 (U8), **owner-confirmed pinout 2026-10-18**: wired as **SPI** (PS=GND), 3.3 V (bank 86), 100R series.
+  CSB B10 (active low), SCLK B11, SDI (MOSI) C11, SDO (MISO) A10. Not I2C; no interrupt line. Upstream Linux driver:
+  IIO `ms5611` SPI (`meas,ms5611`, SPI mode 0/3, <= 20 MHz per datasheet-memory); needs an AXI SPI controller + chip select. **S-text/S-image**
 - Temperature sensor is a **DS18B20** (1-Wire, W13, 4.7K pull-up; also header J11). Owner's "DS18820" is a typo. **S-text**
 - Buzzer: BEEP W12 (NMOS Q1 drive, active high). Fan: PWM E15, FB G17.
-- LEDs LED0-7: E16, E17, F15, D15, B16, D18, G15, E22 (NMOS low-side; active high). Bank 67 (VADJ).
-- Keys KEY_PL0-3: T19, N22, N21, P19; switches SW1-4: N19, N23, R21, R20 (bank 65, 1.2 V pull-ups). Polarity/debounce undocumented.
+- LEDs LED0-7 (**owner-confirmed**): E16, E17, F15, D15, B16, D18, G15, E22. Each drives the gate of an SI2300 NMOS
+  (1K series, 20K pulldown) switching a red LED from +3.3 V => **active high** (drive 1 = on), default off. Bank 67 (VADJ:
+  gate drive is 1.8 or 2.5 V; fine for the SI2300). LED9 = +5 V power, LD10 (blue) = DONE (not software-controllable).
+- Keys KEY_PL0-3 (**owner-confirmed**): T19, N22, N21, P19, bank 65 (VCCO 1.2 V => LVCMOS12). Pushbuttons K1-K4 connect the
+  input to +1.2 V through 1K, with 20K to GND => **active high when pressed**, idle low. No hardware debounce.
+  Switches SW1-4 (4-position DIP): N19, N23, R21, R20, bank 65, 1.2 V, 10K series, DIP sense polarity to be read at zoom.
 - PMOD0 (J1), PMOD1 (J2), PMOD2 (J3) at 3.3 V; PMOD3 (J12) via TXS0108E level translator (bank 66).
 - FMC_PWRGD W15; PCIE reset F22.
 
@@ -86,8 +92,27 @@ Net names in the PDF netlist have `_` replaced by `0`; the CSV is decoded agains
 - RISK: TMDS from a 1.2 V HP bank, AC-coupled, is not a standard-compliant HDMI source. Treat as experimental. Deferred workstream.
 
 ## PCIe / QSFP / FMC
-- PCIe x4 on MGT bank 224 (RX AB1.. TX AC4..), refclk AB7/AB6, PERST F22. QSFP: 4 lanes on bank 225 (V/Y/T/P RX), refclk T7/T6. FMC HPC (bank 66/67
+- QSFP: 4 lanes on bank 225 (V/Y/T/P RX), refclk T7/T6. FMC HPC (bank 66/67
   LA pairs + GTY bank 227 DP0-7), VADJ rail. See CSV. All deferred per README.
+
+## PCIe Gen3 x4 edge connector (sheet 8) — **owner-confirmed pinout**
+- Physical x4 edge (PCIEX4). All four lanes land on GTY quad 224. FPGA pin map (from netlist):
+  | Lane | RX P/N (from host) | TX P/N (to host) |
+  |---|---|---|
+  | 0 | AB2 / AB1 | AC5 / AC4 |
+  | 1 | AD2 / AD1 | AD7 / AD6 |
+  | 2 | AE4 / AE3 | AE9 / AE8 |
+  | 3 | AF2 / AF1 | AF7 / AF6 |
+  REFCLK (slot 100 MHz): AB7 (P) / AB6 (N) = MGTREFCLK0 of quad 224, via 100 nF AC coupling. TX pairs are AC-coupled on the board
+  (100 nF); RX pairs are direct. **S-text/S-image**
+- PERST# (slot A11) -> 1K -> F22 (`PCIE_RESET`), with a 10K pull-up to **+3.3 V** on the slot side. F22 is in bank 66
+  (VCCO = VADJ 1.8/2.5 V), so the 3.3 V net drives a 1.8/2.5 V pin through 1K; the clamp current is small but out of spec
+  for continuous operation. Confirm acceptable and use an input with the internal clamp in mind; or treat as a risk. **S-image**
+- PRSNT#1 (A1) is tied to PRSNT#2 at B17 and B31 (0R), advertising the card as present for x1/x4. No SMBus, WAKE#, JTAG, 3.3 V/3.3VAUX
+  connections (pins crossed out). +12 V from the slot goes to +12V_PCIE through a diode.
+- Gen3 x4 capability: XCKU5P-2 has a PCIE4 hard block and GTY lanes rated for 8 GT/s; Gen3 x4 is feasible in principle, but the
+  block location, lane ordering/polarity against this quad must be checked in Vivado (needs the device installed). Not validated. **datasheet-memory**
+- Role: PCIe endpoint (the board is the card). Deferred workstream, not MVP.
 
 ## Power rails (sheet 9)
 - Two ADP5054 regulators: +0.85 V, +0.9 V, +1.2 V, +1.8 V, +2.5 V, +3.3 V, +5.0 V, +ADJ (1.8/2.5 V jumper), from +12 V. **S-image**
