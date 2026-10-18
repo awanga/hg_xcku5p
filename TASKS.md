@@ -8,17 +8,16 @@
   Reason: user direction. Status: README/AGENTS/TASKS updated.
 - Decision: board memory/flash (owner-stated, NOT yet schematic-verified): config flash MT25QU256ABA1EW9-0SIT;
   DDR4 2 x MT40A256M16GE-075E, 32-bit bus (1 GiB). Status: recorded in docs/hardware/board-inventory.md.
-- Blocker: Vivado 2026.1 in /opt/Xilinx cannot run for XCKU5P.
-  Reason: (1) `~/.Xilinx/install_config.txt` selected "Kintex UltraScale FPGAs" but NOT "Kintex UltraScale+ FPGAs";
-  `parts/xilinx/kintexuplus/` has only `devint` (no `public`), so xcku5p is not installed.
-  (2) First launch fails: "valid license was not found". The `.lic` files found (`/opt/Xilinx/Xilinx-magi.lic`,
-  `~/Xilinx-*.lic`) grant only `ISE_Embedded_Edition`; Vivado needs its own (free ML Standard covers KU5P) license.
-  Next (user): run `/opt/Xilinx/xic/xic` (or the installer) to add Kintex UltraScale+, then Help > Manage License to obtain a
-  Vivado ML Standard license. Not worked around by the agent.
-- Next: Phase 0 (repo, .gitignore, versions, decision templates) done on feature/phase0-setup; then Phase 1 needs the
-  board schematic (not in repo). Without Vivado: schematic review, VexRiscv/CVA6 research, open-tool lint/sim.
-- Open: project LICENSE choice (none yet; SPDX headers omitted); dependency licenses listed once dependencies exist;
-  README/doc edits awaiting user approval before commit; board schematic location; first `release/` versioning scheme.
+- Blocker: Vivado 2026.1 cannot run for XCKU5P yet. (1) Kintex UltraScale+ device support not installed (user is
+  downloading; install via /opt/Xilinx/xic). (2) First launch: "valid license was not found"; on-disk `.lic` files only
+  grant ISE_Embedded_Edition. Next (user): finish KU+ install, get a Vivado ML Standard license. Re-probe with scratchpad probe.tcl.
+- Decision: MIT license (docs/licensing.md); deps checked, no conflict. Schematic PDF kept local (gitignored).
+- Status: schematic reviewed (docs/hardware/board-inventory.md); user clocks/UART pins confirmed. Findings to resolve:
+  JTAG is FT232H (not hub-attached EEPROM; EEPROM is on FT232H); ETH mode GMII vs RGMII strap unclear; MDC/MDIO, INT not
+  wired to FPGA; HDMI DDC not wired to FPGA; SD has no CD/WP/UHS; VADJ jumper must be 1.8 V for UART; FT232H 3.3 V -> bank0 1.8 V JTAG check.
+- Next: owner full pin list reconciles with schematic-pin-extract.csv; then Phase 1 DDR4/flash docs, CPU research
+  (VexRiscv/VexiiRiscv/CVA6 Linux status); Vivado steps once installed.
+- Open: first `release/` versioning scheme.
 
 ## Status legend
 
@@ -29,18 +28,18 @@
 
 ## Phase 0 — Repository and decision records
 
-- [ ] Create Git repository and initial commit containing `README.md`, `AGENTS.md`, and `TASKS.md`.
+- [x] Create Git repository and initial commit containing `README.md`, `AGENTS.md`, and `TASKS.md`.
   - Acceptance: clean working tree after commit; README requirements and this plan are present.
-- [ ] Add license, `.gitignore`, contribution guidance, and a minimal directory layout.
+- [x] Add license, `.gitignore`, contribution guidance, and a minimal directory layout.
   - Acceptance: no generated build output, licensed tools, credentials, or large artifacts are tracked.
 - [ ] Create `docs/versions.md` with pinned versions, upstream URLs, hashes where applicable, support end dates, and review dates.
   - Acceptance: each external dependency has an explicit version policy; no release build depends on a moving branch.
-- [ ] Create architecture and decision-record templates.
+- [x] Create architecture and decision-record templates.
   - Acceptance: decisions record context, alternatives, decision, consequences, validation, and revisit triggers.
 
 ## Phase 1 — Hardware facts and risk retirement
 
-- [ ] Import/review the board schematic and identify exact board revision and component variants.
+- [-] Import/review the board schematic and identify exact board revision and component variants.
   - Acceptance: `docs/hardware/board-inventory.md` records pins, I/O standards, clocks, resets, buses, memory wiring, and evidence.
 - [ ] Map DDR4 devices, controller requirements, data/address width, capacity, byte lanes, reference clocks, calibration, and timing constraints.
   - Acceptance: topology and capacity calculations independently reviewed; unknowns explicitly listed.
