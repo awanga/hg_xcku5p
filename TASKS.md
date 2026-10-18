@@ -1,6 +1,24 @@
 # Development Plan and Progress
 
-This is the session-persistent execution plan. The README is the requirements source of truth. Update this file as work is completed; record evidence, commit IDs, and blockers rather than relying on chat history.
+## Current status (<=100 lines; history in HISTORY.md)
+
+- Decision: CPU study is VexRiscv/VexiiRiscv vs CVA6 (MicroBlaze V and Rocket Chip dropped, 2026-10-18).
+  Reason: user direction. Status: README/AGENTS/TASKS updated; decision record 0001 started.
+- Decision: no self-hosted CI runner; Vivado + hardware jobs run locally; hosted GitHub Actions only for non-licensed checks.
+  Reason: user direction. Status: README/AGENTS/TASKS updated.
+- Decision: board memory/flash (owner-stated, NOT yet schematic-verified): config flash MT25QU256ABA1EW9-0SIT;
+  DDR4 2 x MT40A256M16GE-075E, 32-bit bus (1 GiB). Status: recorded in docs/hardware/board-inventory.md.
+- Blocker: Vivado 2026.1 in /opt/Xilinx cannot run for XCKU5P.
+  Reason: (1) `~/.Xilinx/install_config.txt` selected "Kintex UltraScale FPGAs" but NOT "Kintex UltraScale+ FPGAs";
+  `parts/xilinx/kintexuplus/` has only `devint` (no `public`), so xcku5p is not installed.
+  (2) First launch fails: "valid license was not found". The `.lic` files found (`/opt/Xilinx/Xilinx-magi.lic`,
+  `~/Xilinx-*.lic`) grant only `ISE_Embedded_Edition`; Vivado needs its own (free ML Standard covers KU5P) license.
+  Next (user): run `/opt/Xilinx/xic/xic` (or the installer) to add Kintex UltraScale+, then Help > Manage License to obtain a
+  Vivado ML Standard license. Not worked around by the agent.
+- Next: Phase 0 (repo, .gitignore, versions, decision templates) done on feature/phase0-setup; then Phase 1 needs the
+  board schematic (not in repo). Without Vivado: schematic review, VexRiscv/CVA6 research, open-tool lint/sim.
+- Open: project LICENSE choice (none yet; SPDX headers omitted); dependency licenses listed once dependencies exist;
+  README/doc edits awaiting user approval before commit; board schematic location; first `release/` versioning scheme.
 
 ## Status legend
 
@@ -37,9 +55,7 @@ This is the session-persistent execution plan. The README is the requirements so
 
 ## Phase 2 — CPU, SoC and build-system decisions
 
-- [ ] Verify MicroBlaze V architecture/features and Linux/MMU support from current AMD documentation and actual tool/IP availability.
-  - Acceptance: written go/no-go with exact core configuration and support evidence; no Linux promise based on ISA branding alone.
-- [ ] Evaluate VexRiscv/VexRiscv-SMP, VexiiRiscv, CVA6, Rocket Chip, and MicroBlaze V against a common rubric.
+- [ ] Evaluate VexRiscv/VexRiscv-SMP, VexiiRiscv, and CVA6 against a common rubric.
   - Acceptance: `docs/decisions/0001-cpu-selection.md` includes Linux port status, MMU, ISA width, toolchain, debug, licensing, integration complexity, estimated/actual area, Fmax, DDR performance, and remaining fabric.
 - [ ] Select at least two feasible finalists and establish a baseline synthesis/implementation flow.
   - Acceptance: reports are generated for the actual XCKU5P part with board constraints; unknown/unsupported candidates are not scored as measured.
@@ -103,14 +119,12 @@ This is the session-persistent execution plan. The README is the requirements so
 
 - [ ] Add GitHub Actions PR workflow for formatting, shell/Python tests, configuration checks, device-tree validation, and patch application.
   - Acceptance: workflow runs without Vivado or physical hardware for ordinary PRs.
-- [ ] Provision a dedicated self-hosted Linux runner with pinned Vivado version and license.
-  - Acceptance: runner is least-privilege, isolated, documented, and never runs untrusted fork code with privileged access.
-- [ ] Add synthesis/implementation CI and report extraction.
-  - Acceptance: job archives utilization, timing, DRC, warnings, and build metadata; defined regressions fail the job.
+- [ ] Add a local scripted Vivado build with report extraction (no CI runner by project decision).
+  - Acceptance: script archives utilization, timing, DRC, warnings, and build metadata; defined regressions fail the script.
 - [ ] Add RTL simulation/lint for custom logic.
   - Acceptance: supported checks run automatically; unsupported constructs/tool limitations are documented.
-- [ ] Add scheduled hardware smoke test using serial capture and test scripts.
-  - Acceptance: physical-board job verifies boot marker and available tests, archives logs, and identifies the board/bitstream/kernel revision.
+- [ ] Add a locally run hardware smoke test using serial capture and test scripts.
+  - Acceptance: physical-board script verifies boot marker and available tests, archives logs, and identifies the board/bitstream/kernel revision.
 - [ ] Add release packaging with manifest and SHA-256 checksums.
   - Acceptance: artifacts are reproducible from a clean tagged commit and include recovery instructions.
 

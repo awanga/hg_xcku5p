@@ -11,7 +11,8 @@
 - Respect the README's resource/performance acceptance rule. Measure before claiming improvement.
 - Prefer upstream Linux drivers, bindings, and fixes. Keep local patches small, ordered, documented, and upstreamable.
 - Never infer pin assignments, bus wiring, polarity, memory topology, or component identity from marketing copy. Use the schematics and record uncertainty.
-- Treat MicroBlaze V Linux/MMU capability as unverified until the exact configuration and supported kernel path are demonstrated.
+- MicroBlaze V and Rocket Chip are out of the CPU trade study (project decision); do not reintroduce them without user approval.
+- Config flash is MT25QU256ABA1EW9-0SIT; DDR4 is 2 x MT40A256M16GE-075E on a 32-bit bus (owner-stated; verify against schematic).
 - Keep 100G optics out of MVP critical path.
 - Use Vivado for supported target-device implementation. Open tools may be used for checks/simulation where suitable, not as an assumed replacement for the required vendor flow.
 
@@ -29,7 +30,7 @@
 - Keep RTL, constraints, memory map, device tree, boot configuration, kernel configuration, and rootfs configuration consistent.
 - Any change to clocks, resets, DDR, CPU features, address map, boot flow, or driver bindings must update relevant docs/tests.
 - For every local kernel patch, record purpose, base version, test, and upstream status.
-- CI must protect licensed tools and physical hardware: never run untrusted fork code on a privileged self-hosted runner.
+- No self-hosted CI runner is established (project decision). Vivado and hardware jobs run locally; hosted CI must not need licensed tools or hardware.
 - Keep `TASKS.md` statuses current (`[ ]`, `[-]` in progress, `[x]` complete) and attach evidence/commit IDs for meaningful milestones.
 - If blocked, record the blocker, required input, and safe next step rather than marking the task complete.
 
