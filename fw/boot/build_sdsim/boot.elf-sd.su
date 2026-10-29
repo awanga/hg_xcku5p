@@ -1,6 +1,0 @@
-sd.c:48:16:xfer	0	static
-sd.c:62:16:sd_cmd	48	static
-sd.c:78:13:sd_deselect	16	static
-sd.c:85:5:sd_init	48	static
-sd.c:131:5:sd_read	64	static
-sd.c:165:6:sd_boot_load	32	static

@@ -35,3 +35,4 @@ fw/*/build/
 .Xil/
 .gen/
 .srcs/
+fw/*/build*/
