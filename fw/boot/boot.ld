@@ -17,8 +17,10 @@ SECTIONS
 	} > rom
 
 	.bss (NOLOAD) : {
+		. = ALIGN(8);
 		__bss_start = .;
 		*(.bss .bss.* .sbss .sbss.* COMMON)
+		. = ALIGN(8);
 		__bss_end = .;
 	} > ram
 

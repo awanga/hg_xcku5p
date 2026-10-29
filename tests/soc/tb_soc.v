@@ -10,6 +10,7 @@ module tb_soc;
     parameter LAT = 20;
     parameter PASSES = 2;
     parameter integer MEM_WORDS = 1 << 21; // 64 MiB of 256-bit words, address wraps
+    parameter RX_HEX = "";                 // optional UART receive byte stream (one hex byte per line), e.g. a loader session
     parameter integer GAP = 0;             // idle cycles between 256-bit beats (1 models a 200 MHz DDR4 user clock under a 400 MHz core)
     parameter integer CORRUPT = 0;         // fault injection: flip bit 0 of read data for beats at this index (0 = off)
 
@@ -80,27 +81,46 @@ module tb_soc;
     wire sel_rom  = (pa_addr[31:16] == 16'h1000);
     wire sel_uart = (pa_addr[31:12] == 20'hF8000);
     wire sel_regs = (pa_addr[31:12] == 20'hF8001);
-    reg  [1:0] rsel;
+    reg  [2:0] rsel;
     wire [31:0] rom_rd, regs_rd;
-    always @(posedge clk) if (pa_re) rsel <= {sel_regs, sel_rom};
+    // UART receive model: STAT bit 0 = byte available, RX register pops the queue.
+    reg [7:0] rxq [0:8191];
+    integer rx_n = 0, rx_rd = 0, ri;
+    reg [31:0] uart_rd;
+    initial begin
+        for (ri = 0; ri < 8192; ri = ri + 1) rxq[ri] = 8'hxx;
+        if (RX_HEX != "") begin
+            $readmemh(RX_HEX, rxq);
+            while (rx_n < 8192 && rxq[rx_n] !== 8'hxx) rx_n = rx_n + 1;
+        end
+    end
+    always @(posedge clk) if (pa_re) begin
+        rsel <= {sel_uart, sel_regs, sel_rom};
+        uart_rd <= (pa_addr[3:2] == 2'd0) ? {24'd0, rxq[rx_rd]} : {31'd0, rx_rd < rx_n};
+        if (sel_uart && pa_addr[3:2] == 2'd0 && rx_rd < rx_n) rx_rd <= rx_rd + 1;
+    end
     boot_rom #(.WORDS(4096), .AW(12), .INIT_FILE(ROM_INIT)) u_rom (
         .clk(clk), .en(pa_re && sel_rom), .addr(pa_addr[13:2]), .rdata(rom_rd));
     wire [7:0] led;
     soc_regs #(.CPU_KHZ(400000)) u_regs (
         .clk(clk), .rst_n(~rst), .we(pa_we && sel_regs), .addr(pa_addr[4:2]), .wdata(pa_wdata), .wstrb(pa_wstrb),
         .re(pa_re && sel_regs), .rdata(regs_rd), .led(led), .key_in(1'b0), .ddr_calib_in(1'b1), .ddr_rst_n_in(1'b1));
-    assign pa_rdata = rsel[0] ? rom_rd : (rsel[1] ? regs_rd : 32'd0);
+    assign pa_rdata = rsel[0] ? rom_rd : (rsel[1] ? regs_rd : (rsel[2] ? uart_rd : 32'd0));
 
     // UART model: a TX register write prints the character; STAT reads as "never full" (0).
     // The last 11 characters are kept to count complete error-free passes ("errors: 0\r\n").
-    reg [8*11-1:0] hist;
+    reg [8*16-1:0] hist;
+    reg app_ran = 1'b0;
+    integer banners = 0;
     integer passes = 0;
     reg done = 1'b0;
     always @(posedge clk) begin
         if (pa_we && sel_uart && pa_addr[3:2] == 2'd1) begin
             $write("%c", pa_wdata[7:0]);
-            hist = {hist[8*10-1:0], pa_wdata[7:0]};
-            if (hist == "errors: 0\r\n") passes = passes + 1;
+            hist = {hist[8*15-1:0], pa_wdata[7:0]};
+            if (hist[8*11-1:0] == "errors: 0\r\n") passes = passes + 1;
+            if (hist == "HELLO FROM APP\r\n") app_ran = 1'b1;
+            if (hist[8*13-1:0] == "minimal SoC\r\n") banners = banners + 1;
             if (hist[8*6-1:0] == "DONE\r\n") done = 1'b1;
         end
     end
@@ -215,7 +235,7 @@ module tb_soc;
     always @(posedge clk) cycles <= cycles + 1;
 
     initial begin
-        wait (passes >= PASSES || done);
+        wait ((passes >= PASSES && (RX_HEX == "" || (app_ran && banners >= 2))) || done);
         repeat (50) @(posedge clk);
         $display("\nTBRESULT passes=%0d cycles=%0d PASS", passes, cycles);
         $finish;

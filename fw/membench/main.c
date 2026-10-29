@@ -11,7 +11,7 @@
 #define UART_TX 0x04
 #define UART_STAT 0x08
 #define UART_STAT_TX_FULL (1u << 3)
-#define DDR_BASE 0x40100000UL
+#define DDR_BASE 0x44000000UL
 #define LINE 64UL
 
 #ifndef SIZES
@@ -126,6 +126,5 @@ int main(void)
 		puts_uart("\r\n");
 	}
 	puts_uart("DONE\r\n");
-	for (;;)
-		;
+	return 0;
 }

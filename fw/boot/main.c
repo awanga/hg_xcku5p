@@ -1,8 +1,12 @@
 // SPDX-License-Identifier: MIT
 /*
- * Minimal SoC bring-up firmware, runs from the boot ROM: reports the clock and DDR4 status on the
- * UART, runs a data/address test over DDR4 and measures streaming throughput with the 100 MHz
- * peripheral tick counter, then blinks the LEDs.
+ * Boot ROM monitor: reports the clock and DDR4 status on the UART, runs TEST_PASSES data/address
+ * test passes over DDR4 with streaming throughput (100 MHz peripheral tick counter), then serves a
+ * loader protocol on the UART (tools/load.py):
+ *   "W <hex addr> <hex len>\n" + len raw bytes  ->  "OK <hex byte sum>\n"
+ *   "G <hex addr>\n"                            ->  "GO\n", fence.i, jump
+ *   "T\n"                                       ->  one more test pass
+ * A loaded program that returns lands back here through crt0.
  */
 #include <stdint.h>
 
@@ -15,11 +19,15 @@
 #ifndef TEST_BYTES
 #define TEST_BYTES (16UL << 20)
 #endif
+#ifndef TEST_PASSES
+#define TEST_PASSES 1
+#endif
 
 #define UART_RX 0x00
 #define UART_TX 0x04
 #define UART_STAT 0x08
 #define UART_CTRL 0x0C
+#define UART_STAT_RX_VALID (1u << 0)
 #define UART_STAT_TX_FULL (1u << 3)
 
 #define REG_LED 0x00
@@ -149,11 +157,51 @@ static void bandwidth(volatile uint64_t *p, uint64_t words)
 		puts_uart("  bandwidth read-back mismatch\r\n");
 }
 
-int main(void)
+static char getc_uart(void)
+{
+	while (!(rd32(UART_BASE + UART_STAT) & UART_STAT_RX_VALID))
+		;
+	return (char)rd32(UART_BASE + UART_RX);
+}
+
+static uint64_t parse_hex(char *c)
+{
+	uint64_t v = 0;
+
+	for (;;) {
+		*c = getc_uart();
+		if (*c >= '0' && *c <= '9')
+			v = v << 4 | (uint64_t)(*c - '0');
+		else if (*c >= 'a' && *c <= 'f')
+			v = v << 4 | (uint64_t)(*c - 'a' + 10);
+		else if (*c >= 'A' && *c <= 'F')
+			v = v << 4 | (uint64_t)(*c - 'A' + 10);
+		else
+			return v;
+	}
+}
+
+static uint64_t run_pass(uint64_t pass)
 {
 	volatile uint64_t *test = (volatile uint64_t *)DDR_TEST_BASE;
 	const uint64_t words = TEST_BYTES / 8;
-	uint32_t status;
+	uint64_t errs = 0;
+
+	puts_uart("pass ");
+	put_dec(pass);
+	puts_uart("\r\n");
+	errs += test_pattern(test, words, pass * 0x9E3779B97F4A7C15ULL);
+	errs += test_address(test, words);
+	puts_uart("  errors: ");
+	put_dec(errs);
+	puts_uart("\r\n");
+	bandwidth(test, words);
+	wr32(REGS_BASE + REG_LED, (errs ? 0x80 : 0x00) | (uint32_t)(pass & 0x7F));
+	return errs;
+}
+
+int main(void)
+{
 	uint64_t pass = 0;
 
 	wr32(UART_BASE + UART_CTRL, 0x3); /* reset FIFOs */
@@ -161,24 +209,44 @@ int main(void)
 	puts_uart("CPU clock: ");
 	put_dec(rd32(REGS_BASE + REG_CPU_KHZ));
 	puts_uart(" kHz\r\n");
-	status = rd32(REGS_BASE + REG_STATUS);
 	puts_uart("DDR4 calibrated: ");
-	put_dec(status & 1);
+	put_dec(rd32(REGS_BASE + REG_STATUS) & 1);
 	puts_uart("\r\n");
 
-	for (;;) {
-		uint64_t errs = 0;
+	for (; pass < TEST_PASSES; pass++)
+		run_pass(pass);
 
-		puts_uart("pass ");
-		put_dec(pass);
-		puts_uart("\r\n");
-		errs += test_pattern(test, words, pass * 0x9E3779B97F4A7C15ULL);
-		errs += test_address(test, words);
-		puts_uart("  errors: ");
-		put_dec(errs);
-		puts_uart("\r\n");
-		bandwidth(test, words);
-		wr32(REGS_BASE + REG_LED, (errs ? 0x80 : 0x00) | (uint32_t)(pass & 0x7F));
-		pass++;
+	for (;;) {
+		char c;
+		uint64_t addr, len, sum = 0;
+
+		puts_uart("> ");
+		c = getc_uart();
+		if (c == 'T') {
+			run_pass(pass++);
+		} else if (c == 'W') {
+			volatile uint8_t *p;
+
+			getc_uart(); /* space */
+			addr = parse_hex(&c);
+			len = parse_hex(&c);
+			p = (volatile uint8_t *)addr;
+			for (uint64_t i = 0; i < len; i++) {
+				uint8_t b = (uint8_t)getc_uart();
+
+				p[i] = b;
+				sum += b;
+			}
+			__asm__ volatile("fence rw, rw");
+			puts_uart("OK ");
+			put_hex(sum, 8);
+			puts_uart("\r\n");
+		} else if (c == 'G') {
+			getc_uart(); /* space */
+			addr = parse_hex(&c);
+			puts_uart("GO\r\n");
+			__asm__ volatile("fence rw, rw; fence.i");
+			((void (*)(void))addr)();
+		}
 	}
 }
