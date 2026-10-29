@@ -133,6 +133,19 @@ module tb_spi_sifive;
         repeat (6) @(negedge clk);
         check(cs_n === 1'b1, "AUTO releases CS when idle");
 
+        // fmt.dir rewritten while a transmit-only frame is still shifting (spi-sifive does this when a tx transfer
+        // is followed by an rx transfer): the frame in flight must not leave a byte in the RX FIFO
+        s_pol = 0; s_pha = 0; s_lsb = 0; byte_n = 0; reply[0] = 8'h00;
+        wr(7'h18, 32'd0); wr(7'h00, 32'd8); wr(7'h04, 32'd0);
+        wr(7'h40, {12'd0, 4'd8, 12'd0, 4'b1000});
+        wr(7'h48, 32'h0000_005A);
+        repeat (20) @(negedge clk);
+        wr(7'h40, {12'd0, 4'd8, 12'd0, 4'd0});
+        wait (byte_n == 1);
+        repeat (40) @(negedge clk);
+        rd(7'h4C, v); check(v[31] == 1'b1, "tx-only frame leaves RX FIFO empty after fmt.dir change");
+        check(got[0] == 8'h5A, "tx-only frame data intact");
+
         // TX FIFO full flag and watermark interrupts
         wr(7'h18, 32'd3); // OFF: frames still shift but CS stays idle
         wr(7'h00, 32'd255);

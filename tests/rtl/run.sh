@@ -120,5 +120,8 @@ run_sp mut_spi_cs "$b/mut_spi_cs.v" FAIL
 sed 's/assign mosi = lsb_first ? shreg\[0\] : shreg\[7\];/assign mosi = shreg[7];/' "$sp" >"$b/mut_spi_lsb.v"
 cmp -s "$sp" "$b/mut_spi_lsb.v" && { echo "FAIL mutant spi_lsb unchanged"; fail=1; }
 run_sp mut_spi_lsb "$b/mut_spi_lsb.v" FAIL
+sed 's/if (!frame_tx_only \&\& rx_cnt != DEPTH)/if (!tx_only \&\& rx_cnt != DEPTH)/' "$sp" >"$b/mut_spi_txo.v"
+cmp -s "$sp" "$b/mut_spi_txo.v" && { echo "FAIL mutant spi_txo unchanged"; fail=1; }
+run_sp mut_spi_txo "$b/mut_spi_txo.v" FAIL
 [ "$fail" = 0 ] && echo "ALL PASS" || echo "FAILURES"
 exit "$fail"

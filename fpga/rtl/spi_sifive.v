@@ -39,6 +39,7 @@ module spi_sifive #(
     reg [1:0]  csmode;
     reg [31:0] delay0, delay1;
     reg        lsb_first, tx_only;
+    reg        frame_tx_only; // fmt.dir as of the frame start: the driver rewrites fmt while the last frame is still shifting
     reg [3:0]  frame_len;
     reg [2:0]  txmark, rxmark;
     reg [1:0]  ie;
@@ -74,7 +75,7 @@ module spi_sifive #(
         if (!rst_n) begin
             sckdiv <= 12'd3; pha <= 1'b0; pol <= 1'b0; csdef <= 1'b1; csmode <= 2'd0;
             delay0 <= 32'h0001_0001; delay1 <= 32'h0000_0001;
-            lsb_first <= 1'b0; tx_only <= 1'b0; frame_len <= 4'd8;
+            lsb_first <= 1'b0; tx_only <= 1'b0; frame_tx_only <= 1'b0; frame_len <= 4'd8;
             txmark <= 3'd1; rxmark <= 3'd0; ie <= 2'd0;
             tx_wr <= 0; tx_rd <= 0; rx_wr <= 0; rx_rd <= 0;
             busy <= 1'b0; sck <= 1'b0; cs_active <= 1'b0; divcnt <= 13'd0; half <= 1'b0;
@@ -129,6 +130,7 @@ module spi_sifive #(
                 if (tx_cnt != 0) begin
                     busy <= 1'b1;
                     cs_active <= (csmode != 2'd3);
+                    frame_tx_only <= tx_only;
                     shreg <= tx_head;
                     tx_rd <= tx_rd + 1'b1;
                     bitcnt <= 4'd0;
@@ -149,7 +151,7 @@ module spi_sifive #(
                     bitcnt <= bitcnt + 1'b1;
                     if (bitcnt == 4'd7) begin
                         busy <= 1'b0;
-                        if (!tx_only && rx_cnt != DEPTH) begin
+                        if (!frame_tx_only && rx_cnt != DEPTH) begin
                             rxf[rx_wr[DEPTH_LOG2-1:0]] <= pha ? (lsb_first ? {miso, rxreg[7:1]} : {rxreg[6:0], miso}) : rxreg;
                             rx_wr <= rx_wr + 1'b1;
                         end
