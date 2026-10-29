@@ -1,7 +1,7 @@
 # DDR4 bring-up design: evidence
 
 Design: `fpga/rtl/ddr4_bringup_top.v` (ddr4_0 + `axi_memtest` + `status_uart`), constraints in `fpga/constraints/`, built by
-`fpga/scripts/build_ddr4.tcl`. Evidence class for everything below: **simulation (unit) and Vivado implementation. No board test.**
+`fpga/scripts/build_ddr4.tcl`. Evidence classes are stated per section: simulation (unit), Vivado implementation, and board (2026-10-29).
 
 ## Simulation (`tests/rtl/run.sh`, 2026-10-18)
 - axi_memtest: Icarus + Verilator, defect-free slave (with and without random stalls) plus 6 injected slave faults
@@ -16,4 +16,3 @@ Design: `fpga/rtl/ddr4_bringup_top.v` (ddr4_0 + `axi_memtest` + `status_uart`), 
 - Utilization: 10374 CLB LUT (4.78 %), 13041 CLB registers (3.0 %), 25.5 BRAM tiles (5.3 %), 3 DSP, 83 bonded IOB.
   (Includes the controller's MicroBlaze MCS calibration, test engine, and UART.)
 - DRC: 0 errors; warnings DCIRST-1 x26, PDCN-1569 x3, REQP-1877 x4, RTSTAT-10 x1 (see decision 0004). 0 critical warnings.
-- Bitstream not loaded: the board was not attached over USB when checked (no FT232H/CP2105 enumerated).
