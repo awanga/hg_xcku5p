@@ -35,7 +35,9 @@
 - Decision (user, 2026-10-29): CPU and DDR4 share one clock (ui_clk, 333.33 MHz at DDR4-2667). Status: SoC bitstream (build/soc/vv_333)
   met timing (WNS +0.006, ExplorePostRoutePhysOpt) and ran on the board: 0 errors, CPU stream write/read 350/516 MB/s. UART loader
   (fw/boot, tools/load.py, 921600 baud) passes simulation; bitstream build/soc/vv_333b with the loader was started and NOT yet loaded on the board.
-- Next (resume here): when build/soc/vv_333b.log shows EXIT=0, `openFPGALoader --cable ft232 build/soc/vv_333b/soc.bit`, then
+- Status (2026-10-29): Linux 6.18.59 + OpenSBI 1.9 + Buildroot boots to a login prompt on the board (validation/linux-bringup.md). Next: SD/Ethernet/storage,
+  faster image loading (own UART >230400 baud or SD boot), L2 decision with a Linux workload, timing margin.
+- (older) Next: when build/soc/vv_333b.log shows EXIT=0, `openFPGALoader --cable ft232 build/soc/vv_333b/soc.bit`, then
   `tools/load.py fw/membench/build/membench_app.bin` to measure real L2-less latency vs the simulation model; then rerun L2 study on hardware;
   Linux-like workload; VexRiscv-SMP sim baseline.
 - (superseded) close SoC timing at 333-350 MHz (sweep directives; consider CPU change on BTB/fetch path) and rerun on board; DDR4 speed decision
