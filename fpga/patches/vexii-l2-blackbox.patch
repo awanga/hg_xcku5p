@@ -1,0 +1,13 @@
+diff --git a/src/main/scala/vexiiriscv/soc/litex/Soc.scala b/src/main/scala/vexiiriscv/soc/litex/Soc.scala
+index ebf5fc8..7641579 100644
+--- a/src/main/scala/vexiiriscv/soc/litex/Soc.scala
++++ b/src/main/scala/vexiiriscv/soc/litex/Soc.scala
+@@ -554,7 +554,7 @@ class Soc(c : SocConfig) extends Component {
+ 
+       if(withCoherency && withL2){
+         for (bank <- splited.wc.l2.cache.logic.cache.cache.data.banks) {
+-          bank.ram.preventAsBlackBox() // Some synthesis tools have issues inferring efficient layout when byte mask is used.
++          if (sys.env.getOrElse("VEXII_L2_BLACKBOX", "0") != "1") bank.ram.preventAsBlackBox() // Some synthesis tools have issues inferring efficient layout when byte mask is used.
+         }
+       }
+ 

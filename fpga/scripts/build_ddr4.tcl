@@ -26,6 +26,7 @@ generate_target all $ip
 add_files [glob $root/fpga/rtl/*.v]
 add_files -fileset constrs_1 [list $root/fpga/constraints/ddr4_pins.xdc $root/fpga/constraints/bringup_board.xdc]
 set_property top ddr4_bringup_top [current_fileset]
+set_property generic UI_CLK_HZ=[expr {int(250000000000.0 / $tck)}] [current_fileset]
 update_compile_order -fileset sources_1
 
 proc run_to {name step} {

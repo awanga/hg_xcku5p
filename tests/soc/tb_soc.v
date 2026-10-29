@@ -10,6 +10,7 @@ module tb_soc;
     parameter LAT = 20;
     parameter PASSES = 2;
     parameter integer MEM_WORDS = 1 << 21; // 64 MiB of 256-bit words, address wraps
+    parameter integer GAP = 0;             // idle cycles between 256-bit beats (1 models a 200 MHz DDR4 user clock under a 400 MHz core)
     parameter integer CORRUPT = 0;         // fault injection: flip bit 0 of read data for beats at this index (0 = off)
 
     reg clk = 1'b0;
@@ -94,11 +95,13 @@ module tb_soc;
     // The last 11 characters are kept to count complete error-free passes ("errors: 0\r\n").
     reg [8*11-1:0] hist;
     integer passes = 0;
+    reg done = 1'b0;
     always @(posedge clk) begin
         if (pa_we && sel_uart && pa_addr[3:2] == 2'd1) begin
             $write("%c", pa_wdata[7:0]);
             hist = {hist[8*10-1:0], pa_wdata[7:0]};
             if (hist == "errors: 0\r\n") passes = passes + 1;
+            if (hist[8*6-1:0] == "DONE\r\n") done = 1'b1;
         end
     end
 
@@ -107,7 +110,8 @@ module tb_soc;
     integer ii;
     initial for (ii = 0; ii < MEM_WORDS; ii = ii + 1) mem[ii] = 256'd0;
 
-    localparam S_IDLE = 0, S_RLAT = 1, S_RDATA = 2, S_WDATA = 3, S_WRSP = 4;
+    localparam S_IDLE = 0, S_RLAT = 1, S_RDATA = 2, S_WDATA = 3, S_WRSP = 4, S_RGAP = 5;
+    integer gap_cnt;
     integer st = S_IDLE;
     integer lat_cnt;
     reg [31:0] cur_addr;
@@ -135,6 +139,7 @@ module tb_soc;
             end else if (m_awvalid && !m_awready) begin
                 m_awready <= 1'b1;
                 cur_addr <= m_awaddr; cur_len <= m_awlen; cur_id <= m_awid; beat <= 8'd0;
+                gap_cnt <= 0;
                 st <= S_WDATA;
             end
         end
@@ -159,12 +164,26 @@ module tb_soc;
                     m_rdata <= mem[((cur_addr + 32'd32) >> 5) & (MEM_WORDS - 1)];
                     rd_beats = rd_beats + 1;
                     m_rlast <= (beat + 1'b1 == cur_len);
+                    if (GAP > 0) begin
+                        m_rvalid <= 1'b0;
+                        gap_cnt <= GAP;
+                        st <= S_RGAP;
+                    end
                 end
             end
         end
+        S_RGAP: begin
+            if (gap_cnt == 1) begin
+                m_rvalid <= 1'b1;
+                st <= S_RDATA;
+            end else gap_cnt <= gap_cnt - 1;
+        end
         S_WDATA: begin
-            m_wready <= 1'b1;
+            if (gap_cnt > 0) gap_cnt <= gap_cnt - 1;
+            else m_wready <= 1'b1;
             if (m_wvalid && m_wready) begin
+                gap_cnt <= GAP;
+                if (GAP > 0) m_wready <= 1'b0;
                 wd = mem[(cur_addr >> 5) & (MEM_WORDS - 1)];
                 for (k = 0; k < 32; k = k + 1)
                     if (m_wstrb[k]) wd[8*k +: 8] = m_wdata[8*k +: 8];
@@ -196,7 +215,7 @@ module tb_soc;
     always @(posedge clk) cycles <= cycles + 1;
 
     initial begin
-        wait (passes >= PASSES);
+        wait (passes >= PASSES || done);
         repeat (50) @(posedge clk);
         $display("\nTBRESULT passes=%0d cycles=%0d PASS", passes, cycles);
         $finish;

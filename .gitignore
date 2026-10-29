@@ -30,8 +30,8 @@ credentials*
 docs/external/
 clockInfo.txt
 cong/
-fw/boot/build_sim/
-fw/boot/build/
+fw/*/build_sim/
+fw/*/build/
 .Xil/
 .gen/
 .srcs/

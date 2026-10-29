@@ -4,7 +4,9 @@
 //  led[3] error or timeout seen  led[4] ui_clk heartbeat led[7:5] unused (0)
 // KEY_PL0 (active high when pressed) resets the memory controller and the test.
 // UART1 TX is on a bank powered from VADJ: the board jumper must select 1.8 V (CP2105 VIO is 1.8 V).
-module ddr4_bringup_top (
+module ddr4_bringup_top #(
+    parameter UI_CLK_HZ = 200000000  // 4 / tCK: 200 MHz at 1250 ps, 250 MHz at 1000 ps, 333.33 MHz at 750 ps
+) (
     input  wire        c0_sys_clk_p,
     input  wire        c0_sys_clk_n,
     output wire [16:0] c0_ddr4_adr,
@@ -25,8 +27,6 @@ module ddr4_bringup_top (
     output wire [7:0]  led,
     output wire        uart_tx
 );
-    // ui_clk = 4 * tCK; keep in step with ddr4_0 DDR4_TimePeriod (1250 ps -> 200 MHz).
-    localparam UI_CLK_HZ = 200000000;
     localparam BAUD = 115200;
     localparam CLKS_PER_BIT = (UI_CLK_HZ + BAUD / 2) / BAUD;
 
