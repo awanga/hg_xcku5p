@@ -12,5 +12,10 @@ _start:
 	addi	t0, t0, 8
 	j	1b
 2:	call	main
+	/* let the UART transmit FIFO drain: the ROM resets the FIFOs when it restarts */
+	li	t1, 0xF8000000
+3:	lw	t2, 8(t1)
+	andi	t2, t2, 4
+	beqz	t2, 3b
 	li	t0, 0x10000000
 	jr	t0

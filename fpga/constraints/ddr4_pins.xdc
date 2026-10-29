@@ -77,3 +77,7 @@ set_property PACKAGE_PIN Y20 [get_ports {c0_ddr4_dm_dbi_n[3]}]
 
 # 100 MHz USER_CLK1 (bank 65, 1.2 V) is the DDR4 reference clock
 set_property PACKAGE_PIN T24 [get_ports {c0_sys_clk_p}]
+
+# DRAM PAR (U20): driven low by the top level because the controller has CA parity disabled
+set_property PACKAGE_PIN U20 [get_ports c0_ddr4_par]
+set_property IOSTANDARD SSTL12 [get_ports c0_ddr4_par]

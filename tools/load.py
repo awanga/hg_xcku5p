@@ -19,7 +19,7 @@ def main():
     ap.add_argument("image")
     ap.add_argument("out", nargs="?")
     ap.add_argument("-p", "--port", default="/dev/ttyUSB2")
-    ap.add_argument("-b", "--baud", type=int, default=921600)
+    ap.add_argument("-b", "--baud", type=int, default=230400)
     ap.add_argument("-a", "--addr", type=lambda x: int(x, 0), default=0x40100000)
     ap.add_argument("--no-run", action="store_true")
     ap.add_argument("--make-stream", action="store_true")

@@ -25,6 +25,7 @@ module soc_top #(
     output wire [0:0]  c0_ddr4_ck_t,
     output wire [0:0]  c0_ddr4_ck_c,
     output wire        c0_ddr4_act_n,
+    output wire        c0_ddr4_par,
     output wire        c0_ddr4_reset_n,
     inout  wire [3:0]  c0_ddr4_dm_dbi_n,
     inout  wire [31:0] c0_ddr4_dq,
@@ -129,6 +130,9 @@ module soc_top #(
     wire [3:0]  d_awcache = 4'd0, d_arcache = 4'd0, d_awqos = 4'd0, d_arqos = 4'd0;
     wire [2:0]  d_awprot = 3'd0, d_arprot = 3'd0;
     wire        d_awlock = 1'b0, d_arlock = 1'b0;
+
+    // CA parity is disabled in the controller, which then has no PAR port; drive the DRAM PAR input low (DDR4 needs a valid level).
+    assign c0_ddr4_par = 1'b0;
 
     ddr4_0 u_ddr4 (
         .c0_init_calib_complete(calib),

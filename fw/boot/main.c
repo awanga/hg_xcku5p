@@ -204,7 +204,7 @@ int main(void)
 {
 	uint64_t pass = 0;
 
-	wr32(UART_BASE + UART_CTRL, 0x3); /* reset FIFOs */
+	wr32(UART_BASE + UART_CTRL, 0x2); /* reset the RX FIFO only: a returning program may still be draining TX */
 	puts_uart("\r\nHG-XCKU5P minimal SoC\r\n");
 	puts_uart("CPU clock: ");
 	put_dec(rd32(REGS_BASE + REG_CPU_KHZ));

@@ -17,6 +17,7 @@ module ddr4_bringup_top (
     output wire [0:0]  c0_ddr4_ck_t,
     output wire [0:0]  c0_ddr4_ck_c,
     output wire        c0_ddr4_act_n,
+    output wire        c0_ddr4_par,
     output wire        c0_ddr4_reset_n,
     inout  wire [3:0]  c0_ddr4_dm_dbi_n,
     inout  wire [31:0] c0_ddr4_dq,
@@ -41,6 +42,9 @@ module ddr4_bringup_top (
     wire [1:0]   bresp, rresp;
     wire [31:0]  pass_cnt, err_cnt, wr_cycles, rd_cycles;
     wire         timeout, busy;
+
+    // CA parity is disabled in the controller, which then has no PAR port; drive the DRAM PAR input low (DDR4 needs a valid level).
+    assign c0_ddr4_par = 1'b0;
 
     ddr4_0 u_ddr4 (
         .c0_init_calib_complete(calib),
