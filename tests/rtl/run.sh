@@ -75,5 +75,29 @@ run_su mut_su_nib "$b/mut_su_nib.v" "$ut" FAIL
 sed 's/nbits <= 4.d10;/nbits <= 4'"'"'d9;/' "$ut" >"$b/mut_ut_stop.v"
 cmp -s "$ut" "$b/mut_ut_stop.v" && { echo "FAIL mutant ut_stop unchanged"; fail=1; }
 run_su mut_ut_stop "$su" "$b/mut_ut_stop.v" FAIL
+
+# axil_simple + soc_regs + boot_rom
+ai=$here/fpga/rtl/axil_simple.v
+sr=$here/fpga/rtl/soc_regs.v
+br=$here/fpga/rtl/boot_rom.v
+tbp=$here/tests/rtl/tb_soc_periph.v
+python3 "$here/tests/rtl/gen_rom.py" "$b/rom_test.hex"
+verilator --lint-only -Wall -Wno-DECLFILENAME -Wno-MULTITOP "$ai" "$sr" "$br" >"$b/lint_periph.log" 2>&1 && echo "PASS lint periph" || {
+	echo "FAIL lint periph"; head "$b/lint_periph.log"; fail=1; }
+run_pe() { # name axil_simple.v soc_regs.v expect
+	(cd "$b" && iverilog -g2005 -o "$1.vvp" "$tbp" "$2" "$3" "$br" >"$1.build.log" 2>&1) || { echo "FAIL $1 (build)"; fail=1; return; }
+	(cd "$b" && timeout 120 vvp "$1.vvp" >"$1.log" 2>&1)
+	grep -q "TBRESULT.* $4\$" "$b/$1.log" && echo "PASS $1 [icarus, expect $4]" || { echo "FAIL $1 [expected $4]"; grep -E 'TBRESULT|MISMATCH' "$b/$1.log" | head -3; fail=1; }
+}
+run_pe periph "$ai" "$sr" PASS
+sed 's/if (addr == 3.d0 \&\& wstrb\[0\]) led/if (addr == 3'"'"'d0) led/' "$sr" >"$b/mut_sr_strb.v"
+cmp -s "$sr" "$b/mut_sr_strb.v" && { echo "FAIL mutant sr_strb unchanged"; fail=1; }
+run_pe mut_sr_strb "$ai" "$b/mut_sr_strb.v" FAIL
+sed 's/3.d2: rdata <= {30.d0, rst_s\[2\], calib_s\[2\]};/3'"'"'d2: rdata <= {30'"'"'d0, calib_s[2], rst_s[2]};/' "$sr" >"$b/mut_sr_status.v"
+cmp -s "$sr" "$b/mut_sr_status.v" && { echo "FAIL mutant sr_status unchanged"; fail=1; }
+run_pe mut_sr_status "$ai" "$b/mut_sr_status.v" FAIL
+sed 's/rdata_q  <= rdata;/rdata_q  <= 32'"'"'d0;/' "$ai" >"$b/mut_ai_rdata.v"
+cmp -s "$ai" "$b/mut_ai_rdata.v" && { echo "FAIL mutant ai_rdata unchanged"; fail=1; }
+run_pe mut_ai_rdata "$b/mut_ai_rdata.v" "$sr" FAIL
 [ "$fail" = 0 ] && echo "ALL PASS" || echo "FAILURES"
 exit "$fail"
