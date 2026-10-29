@@ -1,0 +1,10 @@
+// SPDX-License-Identifier: MIT
+/* Boot with the root filesystem on the first SD card partition (ext4, persistent). */
+/dts-v1/;
+#include "hg-xcku5p.dtsi"
+
+/ {
+	chosen {
+		bootargs = "console=ttyUL0,230400 earlycon=sbi root=/dev/mmcblk0p1 rootwait rw";
+	};
+};
