@@ -36,3 +36,25 @@ Status 2026-10-29. Simulation (Verilator, generated netlists) and out-of-context
 
 ## Provisional recommendation
 256 KiB 4-way (8 URAM, 12.5 % of the device, 56 left; ~20 MHz of Fmax). 128 KiB is nearly free in Fmax but covers few working sets; 512 KiB pays 16 URAM and ~45 MHz for a larger set. The tests are synthetic; the deciding data is a Linux-like workload (kernel build, compression, database) once Linux runs; revisit then. The coherent fabric is needed anyway for PCIe/Ethernet DMA, so the hub cost is not attributable to the L2.
+
+## Board measurements (2026-10-29, CPU and DDR4 ui_clk 333.33 MHz, DDR4-2667)
+Same membench, loaded over the UART (`tools/load.py fw/membench/build/membench_app.bin`); cycles x100 per 64 B line (seq, copy) / per access (chase).
+Timing of the L2 images: 256 KiB WNS -0.071 ns, 512 KiB WNS -0.271 ns (not met; they ran correctly in minutes at room temperature, treat
+the numbers as performance data only). soc_base (no coherency, no L2) met timing.
+
+| Working set | no L2 (soc_base) | L2 256 KiB | L2 512 KiB |
+|---|---|---|---|
+| 16 KiB (L1) | 20 / 7 / 88 | 20 / 7 / 91 | 20 / 7 / 92 |
+| 64 KiB | 32 / 50 / 94 | 41 / 27 / 95 | 43 / 29 / 97 |
+| 256 KiB | 31 / 54 / 95 | 41 / 28 / 147 | 43 / 30 / 98 |
+| 512 KiB | 31 / 55 / 95 | 67 / 59 / 151 | 43 / 30 / 147 |
+| 1 MiB | 31 / 55 / 95 | 67 / 61 / 152 | 67 / 56 / 149 |
+| 4 MiB | 31 / 55 / 95 | 67 / 62 / 153 | 67 / 62 / 153 |
+
+(seq / chase / copy; soc_base row from the 4 MiB-capable run, values for 64 KiB..4 MiB steady within 3 %.)
+
+Findings on hardware (these supersede the simulation conclusions where they differ):
+- The real DDR4 path is much faster than the simulation model: uncached sequential read 31 cycles/line, random read 55 cycles/access (~165 ns), thanks to the L1 hardware prefetcher.
+- An L2 that holds the working set helps random access only (chase 55 -> 28-30, 1.9x). Sequential read gets slower (31 -> 41-43, 1.4x worse) and copy does not improve.
+- A working set larger than the L2 costs 2x on sequential read (31 -> 67), 1.6x on copy and ~10 % on random access.
+- So an L2 is not a clear win for this core with this memory: it pays only for random access over 64 KiB..L2-size sets. The comparison that matters for the decision is hub-only coherency (soc_dma) against the L2 variants, since coherency is needed for DMA anyway; that baseline has not been measured on the board yet.
