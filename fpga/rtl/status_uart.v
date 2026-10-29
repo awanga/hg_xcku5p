@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Periodically prints "C<c> P<pass> E<err> W<wr> R<rd>\r\n" (hex, 44 bytes) on a UART.
+// Periodically prints "C<c> P<pass> E<err> W<wr> R<rd> F<freq>\r\n" (hex, 54 bytes) on a UART.
 // The values are sampled together at the start of each line, so one line is self-consistent.
 // A line starts every INTERVAL clocks after reset; a line still being sent when the next interval
 // ends is not interrupted (the next one starts when it finishes).
@@ -14,12 +14,13 @@ module status_uart #(
     input  wire [31:0] err,
     input  wire [31:0] wr,
     input  wire [31:0] rd,
+    input  wire [31:0] freq,
     output wire        tx
 );
     reg [31:0] interval_cnt;
     reg        due;
     reg        calib_q;
-    reg [31:0] pass_q, err_q, wr_q, rd_q;
+    reg [31:0] pass_q, err_q, wr_q, rd_q, freq_q;
     reg [5:0]  idx;
     reg        sending;
     reg [7:0]  ch;
@@ -53,8 +54,10 @@ module status_uart #(
         6'd23: ch = "W";
         6'd32: ch = " ";
         6'd33: ch = "R";
-        6'd42: ch = 8'h0D;
-        6'd43: ch = 8'h0A;
+        6'd42: ch = " ";
+        6'd43: ch = "F";
+        6'd52: ch = 8'h0D;
+        6'd53: ch = 8'h0A;
         default: begin
             if (idx < 6'd12)
                 ch = hex(nib(pass_q, idx[2:0] - 3'd4));
@@ -62,8 +65,10 @@ module status_uart #(
                 ch = hex(nib(err_q, idx[2:0] - 3'd6));
             else if (idx < 6'd32)
                 ch = hex(nib(wr_q, idx[2:0] - 3'd0));
-            else
+            else if (idx < 6'd42)
                 ch = hex(nib(rd_q, idx[2:0] - 3'd2));
+            else
+                ch = hex(nib(freq_q, idx[2:0] - 3'd4));
         end
         endcase
     end
@@ -82,6 +87,7 @@ module status_uart #(
             err_q <= 32'd0;
             wr_q <= 32'd0;
             rd_q <= 32'd0;
+            freq_q <= 32'd0;
         end else begin
             if (interval_cnt == INTERVAL - 1) begin
                 interval_cnt <= 32'd0;
@@ -98,9 +104,10 @@ module status_uart #(
                     err_q <= err;
                     wr_q <= wr;
                     rd_q <= rd;
+                    freq_q <= freq;
                 end
             end else if (valid && ready) begin
-                if (idx == 6'd43)
+                if (idx == 6'd53)
                     sending <= 1'b0;
                 else
                     idx <= idx + 1'b1;

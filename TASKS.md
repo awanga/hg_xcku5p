@@ -26,7 +26,14 @@
   32K cache needs 42 BRAM. Interim pick: RV64, 16K/16K 4-way + BTB/RAS/gshare + prefetch (22 BRAM). See validation/cpu-benchmarks.md.
 - Status: core-only OOC place-and-route Fmax: timing met at 300 MHz target (WNS +0.09 ns); SoC clock will be set by fabric/DDR4, plan 150-200 MHz.
 - Future (user request): UltraRAM L2 sweet-spot study incl. URAM left for peripherals (decisions/0001, end).
-- Next (CPU, no board needed): minimal SoC (CPU + AXI + DDR4 IP) place/route; URAM L2 study; Linux-like workload; VexRiscv-SMP sim baseline (not done).
+- Status (2026-10-29, board connected via openFPGALoader --cable ft232, console /dev/ttyUSB2): DDR4 bring-up verified on hardware at
+  DDR4-1600, 2000 and 2667 (tCK 750, ui_clk 333.33 MHz measured): calibrated, 0 errors; AXI-port write/read ~8.6/4.6 GB/s at 2667.
+  See validation/ddr4-bringup.md (needs update) and soc-minimal.md.
+- Status: minimal SoC (Vexii RV64 + AMD DDR4 + boot ROM + UART) boots on the board at 400 MHz CPU / DDR4-1600, 16 MiB tests 0 errors;
+  static timing NOT met (-0.55 ns, BTB->fetch L1 BRAM path); core-only realistic Fmax ~340 MHz.
+- Status: L2 study (validation/l2-study.md): provisional 256 KiB 4-way URAM L2 (8 URAM); revisit with a Linux workload.
+- Next: close SoC timing at 333-350 MHz (sweep directives; consider CPU change on BTB/fetch path) and rerun on board; DDR4 speed decision
+  (2667 supported by the part; CPU:DDR clock ratio cannot be 2:1 at 2667); update ddr4-bringup.md and decisions/0004; Linux-like workload; VexRiscv-SMP sim baseline (not done).
 - Status: DDR4 bring-up design built (synth/impl/bitstream, timing met, tCK 1250) with RTL unit tests; NOT run on the board.
   See docs/validation/ddr4-bringup.md and decisions/0004. Open: PAR undriven (no CA parity), DCIRST-1 warning.
 - Next (needs board on USB + JTAG path: FT232H, not Vivado-native -> openFPGALoader): program, read UART1 at 115200.

@@ -1,9 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Board I/O and clocks for the minimal SoC (soc_top). DDR4 pins are in ddr4_pins.xdc, key/LED/UART TX in bringup_board.xdc.
-# CLK_50M (bank 67, VCCO = VADJ: 1.8 V jumper position required)
-set_property PACKAGE_PIN E18 [get_ports clk50]
-set_property IOSTANDARD LVCMOS18 [get_ports clk50]
-create_clock -name clk50 -period 20.000 [get_ports clk50]
+# clk50 is constrained in bringup_board.xdc
 # UART1 PC->FPGA (CP2105 SCI)
 set_property PACKAGE_PIN H16 [get_ports uart_rx]
 set_property IOSTANDARD LVCMOS18 [get_ports uart_rx]

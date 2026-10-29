@@ -4,9 +4,8 @@
 //  led[3] error or timeout seen  led[4] ui_clk heartbeat led[7:5] unused (0)
 // KEY_PL0 (active high when pressed) resets the memory controller and the test.
 // UART1 TX is on a bank powered from VADJ: the board jumper must select 1.8 V (CP2105 VIO is 1.8 V).
-module ddr4_bringup_top #(
-    parameter UI_CLK_HZ = 200000000  // 4 / tCK: 200 MHz at 1250 ps, 250 MHz at 1000 ps, 333.33 MHz at 750 ps
-) (
+module ddr4_bringup_top (
+    input  wire        clk50,
     input  wire        c0_sys_clk_p,
     input  wire        c0_sys_clk_n,
     output wire [16:0] c0_ddr4_adr,
@@ -27,8 +26,8 @@ module ddr4_bringup_top #(
     output wire [7:0]  led,
     output wire        uart_tx
 );
-    localparam BAUD = 115200;
-    localparam CLKS_PER_BIT = (UI_CLK_HZ + BAUD / 2) / BAUD;
+    // Status UART and the ui_clk frequency counter run on CLK_50M so the console stays readable at any DDR4 speed.
+    localparam CLKS_PER_BIT = 434; // 50 MHz / 115200
 
     wire         ui_clk;
     wire         ui_rst;
@@ -115,9 +114,49 @@ module ddr4_bringup_top #(
         .pass_cnt(pass_cnt), .err_cnt(err_cnt), .wr_cycles(wr_cycles), .rd_cycles(rd_cycles),
         .first_err_addr(first_err_addr), .timeout(timeout), .busy(busy));
 
-    status_uart #(.CLKS_PER_BIT(CLKS_PER_BIT), .INTERVAL(UI_CLK_HZ / 2)) u_status (
-        .clk(ui_clk), .rst_n(aresetn), .calib(calib), .pass(pass_cnt), .err(err_cnt),
-        .wr(wr_cycles), .rd(rd_cycles), .tx(uart_tx));
+    wire clk50_i;
+    IBUF u_clk50_ibuf (.I(clk50), .O(clk50_i));
+    reg [3:0] rcnt = 4'd0;
+    always @(posedge clk50_i)
+        if (rcnt != 4'hF) rcnt <= rcnt + 1'b1;
+    wire rst50_n = (rcnt == 4'hF);
+
+    // ui_clk frequency: gate ui_clk edges for 0.25 s of CLK_50M (clear, count, settle, sample); the count is read
+    // only while the gate is low, so it never changes during the transfer.
+    reg [23:0] ph_cnt = 24'd0;
+    reg [1:0]  ph = 2'd0;
+    always @(posedge clk50_i) begin
+        if (ph_cnt == 24'd12499999) begin
+            ph_cnt <= 24'd0;
+            ph <= ph + 1'b1;
+        end else
+            ph_cnt <= ph_cnt + 1'b1;
+    end
+    wire gate50 = (ph == 2'd1);
+    wire clr50 = (ph == 2'd0);
+    (* ASYNC_REG = "TRUE" *) reg [1:0] gate_s, clr_s;
+    reg [31:0] ui_cnt = 32'd0;
+    always @(posedge ui_clk) begin
+        gate_s <= {gate_s[0], gate50};
+        clr_s <= {clr_s[0], clr50};
+        if (clr_s[1]) ui_cnt <= 32'd0;
+        else if (gate_s[1]) ui_cnt <= ui_cnt + 1'b1;
+    end
+    reg [31:0] freq_hz = 32'd0;
+    always @(posedge clk50_i)
+        if (ph == 2'd3 && ph_cnt == 24'd0) freq_hz <= {ui_cnt[29:0], 2'b00};
+
+    // Status inputs from ui_clk are registered twice on CLK_50M; they change rarely (one pass takes tens of ms), and
+    // a torn sample would only show as one odd line.
+    (* ASYNC_REG = "TRUE" *) reg [128:0] st_a, st_b;
+    always @(posedge clk50_i) begin
+        st_a <= {calib, pass_cnt, err_cnt, wr_cycles, rd_cycles};
+        st_b <= st_a;
+    end
+
+    status_uart #(.CLKS_PER_BIT(CLKS_PER_BIT), .INTERVAL(25000000)) u_status (
+        .clk(clk50_i), .rst_n(rst50_n), .calib(st_b[128]), .pass(st_b[127:96]), .err(st_b[95:64]),
+        .wr(st_b[63:32]), .rd(st_b[31:0]), .freq(freq_hz), .tx(uart_tx));
 
     reg [26:0] hb;
     always @(posedge ui_clk)

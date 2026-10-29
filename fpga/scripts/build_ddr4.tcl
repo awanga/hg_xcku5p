@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # DDR4 bring-up build: vivado -mode batch -source fpga/scripts/build_ddr4.tcl -tclargs <outdir> [tck_ps] [-to synth|impl|bit]
-# tck_ps is the DDR4 clock period (default 1250 = DDR4-1600). ui_clk = 4*tck must match UI_CLK_HZ in
-# ddr4_bringup_top.v (200 MHz at 1250 ps).
+# tck_ps is the DDR4 clock period (default 1250 = DDR4-1600); ui_clk = tck/4 rate: 200 MHz at 1250 ps, 250 MHz at 1000 ps.
+# Needs the board on CLK_50M for the status UART (see ddr4_bringup_top.v).
 set root [file normalize [file join [file dirname [info script]] .. ..]]
 set outdir [file normalize [lindex $argv 0]]
 set tck [expr {[llength $argv] > 1 && [string is integer [lindex $argv 1]] ? [lindex $argv 1] : 1250}]
@@ -24,9 +24,8 @@ set_property -dict [list \
 generate_target all $ip
 
 add_files [glob $root/fpga/rtl/*.v]
-add_files -fileset constrs_1 [list $root/fpga/constraints/ddr4_pins.xdc $root/fpga/constraints/bringup_board.xdc]
+add_files -fileset constrs_1 [list $root/fpga/constraints/ddr4_pins.xdc $root/fpga/constraints/bringup_board.xdc $root/fpga/constraints/bringup_cdc.xdc]
 set_property top ddr4_bringup_top [current_fileset]
-set_property generic UI_CLK_HZ=[expr {int(250000000000.0 / $tck)}] [current_fileset]
 update_compile_order -fileset sources_1
 
 proc run_to {name step} {

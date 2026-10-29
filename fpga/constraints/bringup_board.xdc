@@ -15,3 +15,7 @@ set_property IOSTANDARD LVCMOS18 [get_ports {led[*]}]
 # UART1 FPGA->PC (CP2105 SCI)
 set_property PACKAGE_PIN G16 [get_ports uart_tx]
 set_property IOSTANDARD LVCMOS18 [get_ports uart_tx]
+# CLK_50M (bank 67, VCCO = VADJ) drives the status UART and the ui_clk frequency counter
+set_property PACKAGE_PIN E18 [get_ports clk50]
+set_property IOSTANDARD LVCMOS18 [get_ports clk50]
+create_clock -name clk50 -period 20.000 [get_ports clk50]
