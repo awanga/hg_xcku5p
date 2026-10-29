@@ -2,8 +2,9 @@
 # SPDX-License-Identifier: MIT
 """Load a raw binary into DDR4 through the boot ROM loader and optionally run it.
 
-usage: load.py [-p PORT] [-b BAUD] [-a ADDR] [--no-run] [--stream-file FILE] image.bin
+usage: load.py [-p PORT] [-b BAUD] [-a ADDR] [--run ADDR] [--no-run] image.bin[@ADDR] [image2.bin@ADDR ...]
        load.py --make-stream image.bin OUT [-a ADDR]     (byte stream for the simulation testbench)
+Images without @ADDR go to -a (default 0x40100000). The program starts at --run (default: the first image's address).
 """
 import argparse
 import sys
@@ -16,8 +17,8 @@ def stream(image, addr):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("image")
-    ap.add_argument("out", nargs="?")
+    ap.add_argument("image", nargs="+", help="file[@addr]; with --make-stream: image OUT")
+    ap.add_argument("--run", type=lambda x: int(x, 0), default=None)
     ap.add_argument("-p", "--port", default="/dev/ttyUSB2")
     ap.add_argument("-b", "--baud", type=int, default=230400)
     ap.add_argument("-a", "--addr", type=lambda x: int(x, 0), default=0x40100000)
@@ -25,10 +26,10 @@ def main():
     ap.add_argument("--make-stream", action="store_true")
     ap.add_argument("--listen", type=float, default=5.0, help="seconds of console output to show after GO")
     a = ap.parse_args()
-    image = open(a.image, "rb").read()
     if a.make_stream:
+        image = open(a.image[0], "rb").read()
         data = stream(image, a.addr)
-        with open(a.out, "w") as f:
+        with open(a.image[1], "w") as f:
             f.write("".join("%02x\n" % b for b in data))
         return 0
 
@@ -44,18 +45,24 @@ def main():
     if not buf.endswith(b"> "):
         print("no loader prompt; console said: %r" % buf[-200:], file=sys.stderr)
         return 1
-    s.write(b"W %x %x\n" % (a.addr, len(image)))
-    for i in range(0, len(image), 256):
-        s.write(image[i:i + 256])
-        s.flush()
-    line = s.readline().decode(errors="replace").strip().lstrip("> ")
-    want = "OK %08X" % (sum(image) & 0xFFFFFFFF)
-    if line != want:
-        print("checksum mismatch: got %r want %r" % (line, want), file=sys.stderr)
-        return 1
-    print("loaded %d bytes at 0x%x, checksum ok" % (len(image), a.addr))
+    images = []
+    for spec in a.image:
+        path, _, at = spec.partition("@")
+        images.append((int(at, 0) if at else a.addr, open(path, "rb").read(), path))
+    for addr, image, path in images:
+        s.write(b"W %x %x\n" % (addr, len(image)))
+        t0 = time.time()
+        for i in range(0, len(image), 256):
+            s.write(image[i:i + 256])
+            s.flush()
+        line = s.readline().decode(errors="replace").strip().lstrip("> ")
+        want = "OK %08X" % (sum(image) & 0xFFFFFFFF)
+        if line != want:
+            print("%s: checksum mismatch: got %r want %r" % (path, line, want), file=sys.stderr)
+            return 1
+        print("loaded %s: %d bytes at 0x%x in %.0f s, checksum ok" % (path, len(image), addr, time.time() - t0))
     if not a.no_run:
-        s.write(b"G %x\n" % a.addr)
+        s.write(b"G %x\n" % (a.run if a.run is not None else images[0][0]))
         end = time.time() + a.listen
         while time.time() < end:
             d = s.read(256)

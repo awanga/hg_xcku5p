@@ -1,0 +1,86 @@
+// SPDX-License-Identifier: MIT
+/*
+ * HG-XCKU5P minimal SoC: VexiiRiscv RV64IMA (no C/F/D), CPU on the DDR4 user clock.
+ * Memory map is fixed by fpga/rtl/soc_top.v and fpga/scripts/cpu/gen_soc.sh; keep them consistent.
+ * The first MiB of DDR4 holds the ROM loader's stack until OpenSBI takes over at 0x40100000.
+ */
+/dts-v1/;
+
+/ {
+	#address-cells = <1>;
+	#size-cells = <1>;
+	compatible = "hamgeek,hg-xcku5p", "vexiiriscv";
+	model = "HG-XCKU5P VexiiRiscv";
+
+	chosen {
+		bootargs = "console=ttyUL0,230400 earlycon=sbi rdinit=/sbin/init";
+		stdout-path = "serial0:230400n8";
+	};
+
+	aliases {
+		serial0 = &uart0;
+	};
+
+	cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+		timebase-frequency = <333333333>;
+
+		cpu0: cpu@0 {
+			device_type = "cpu";
+			compatible = "spinalhdl,vexiiriscv", "riscv";
+			reg = <0>;
+			riscv,isa = "rv64ima_zicsr_zifencei";
+			riscv,isa-base = "rv64i";
+			riscv,isa-extensions = "i", "m", "a", "zicsr", "zifencei";
+			mmu-type = "riscv,sv39";
+			status = "okay";
+
+			cpu0_intc: interrupt-controller {
+				#interrupt-cells = <1>;
+				interrupt-controller;
+				compatible = "riscv,cpu-intc";
+			};
+		};
+	};
+
+	memory@40000000 {
+		device_type = "memory";
+		reg = <0x40000000 0x40000000>;
+	};
+
+	soc {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		compatible = "simple-bus";
+		ranges;
+
+		clint: timer@f0010000 {
+			compatible = "sifive,clint0", "riscv,clint0";
+			reg = <0xf0010000 0x10000>;
+			interrupts-extended = <&cpu0_intc 3>, <&cpu0_intc 7>;
+		};
+
+		plic: interrupt-controller@f0c00000 {
+			compatible = "sifive,plic-1.0.0", "riscv,plic0";
+			reg = <0xf0c00000 0x400000>;
+			#interrupt-cells = <1>;
+			#address-cells = <0>;
+			interrupt-controller;
+			interrupts-extended = <&cpu0_intc 11>, <&cpu0_intc 9>;
+			riscv,ndev = <31>;
+		};
+
+		uart0: serial@f8000000 {
+			compatible = "xlnx,xps-uartlite-1.00.a";
+			reg = <0xf8000000 0x1000>;
+			interrupt-parent = <&plic>;
+			interrupts = <1>;
+			current-speed = <230400>;
+			clock-frequency = <100000000>;
+			xlnx,baudrate = <230400>;
+			xlnx,data-bits = <8>;
+			xlnx,use-parity = <0>;
+		};
+	};
+};
