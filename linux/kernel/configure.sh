@@ -17,5 +17,6 @@ make ARCH=riscv CROSS_COMPILE="$cross" O="$out" tinyconfig >/dev/null
 	-e SIFIVE_PLIC -e HIGH_RES_TIMERS -e NO_HZ_IDLE -e CMDLINE_FROM_DTB
 make ARCH=riscv CROSS_COMPILE="$cross" O="$out" olddefconfig >/dev/null
 ./scripts/config --file "$out/.config" -d EFI -d RISCV_ISA_C
+[ "${KDEBUG:-0}" = 1 ] && ./scripts/config --file "$out/.config" -e DYNAMIC_DEBUG -e DEBUG_FS
 make ARCH=riscv CROSS_COMPILE="$cross" O="$out" olddefconfig >/dev/null
 if grep -q '^CONFIG_RISCV_ISA_C=y' "$out/.config"; then echo "RISCV_ISA_C still enabled" >&2; exit 1; fi
