@@ -95,8 +95,14 @@ int sd_init(void)
 		xfer(0xFF);
 	wr32(SPI_BASE + SPI_CSMODE, SPI_CS_HOLD);
 
-	if (sd_cmd(0, 0, 0x95) != R1_IDLE)
-		return -1; /* no card or not in idle state */
+	/* A card whose multi-block read was cut off by a reset ignores CMD0 until it is stopped and drained. */
+	for (int try = 0; sd_cmd(0, 0, 0x95) != R1_IDLE; try++) {
+		if (try == 3)
+			return -1; /* no card or not in idle state */
+		sd_cmd(12, 0, 0x61);
+		for (int i = 0; i < 600; i++)
+			xfer(0xFF);
+	}
 	sdhc = 0;
 	v2 = sd_cmd(8, 0x1AA, 0x87) == R1_IDLE;
 	if (v2) {
