@@ -31,7 +31,7 @@
   See validation/ddr4-bringup.md (needs update) and soc-minimal.md.
 - Status: minimal SoC (Vexii RV64 + AMD DDR4 + boot ROM + UART) boots on the board at 400 MHz CPU / DDR4-1600, 16 MiB tests 0 errors;
   static timing NOT met (-0.55 ns, BTB->fetch L1 BRAM path); core-only realistic Fmax ~340 MHz.
-- Status: L2 study (validation/l2-study.md): provisional 256 KiB 4-way URAM L2 (8 URAM); revisit with a Linux workload.
+- Status: L2 study measured on the board (validation/l2-study.md): L2 helps only random access over L1..L2-size sets (2x), penalises sequential/larger sets; recommendation: no L2 yet, hub-only coherent SoC, revisit with a Linux workload. Coherency hub costs ~29 % seq / 12 % random vs non-coherent. 1 MiB L2 not built.
 - Decision (user, 2026-10-29): CPU and DDR4 share one clock (ui_clk, 333.33 MHz at DDR4-2667). Status: SoC bitstream (build/soc/vv_333)
   met timing (WNS +0.006, ExplorePostRoutePhysOpt) and ran on the board: 0 errors, CPU stream write/read 350/516 MB/s. UART loader
   (fw/boot, tools/load.py, 921600 baud) passes simulation; bitstream build/soc/vv_333b with the loader was started and NOT yet loaded on the board.

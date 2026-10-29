@@ -58,3 +58,20 @@ Findings on hardware (these supersede the simulation conclusions where they diff
 - An L2 that holds the working set helps random access only (chase 55 -> 28-30, 1.9x). Sequential read gets slower (31 -> 41-43, 1.4x worse) and copy does not improve.
 - A working set larger than the L2 costs 2x on sequential read (31 -> 67), 1.6x on copy and ~10 % on random access.
 - So an L2 is not a clear win for this core with this memory: it pays only for random access over 64 KiB..L2-size sets. The comparison that matters for the decision is hub-only coherency (soc_dma) against the L2 variants, since coherency is needed for DMA anyway; that baseline has not been measured on the board yet.
+
+### Hub-only coherency baseline and 128 KiB L2 (board, same conditions)
+`soc_dma` (coherency hub + DMA port, no L2; WNS -0.061 ns, ran correctly) and the 128 KiB L2 (WNS +0.011 ns):
+
+| Working set | soc_base | soc_dma (hub) | L2 128 KiB |
+|---|---|---|---|
+| 64 KiB | 32 / 50 / 94 | 40 / 57 / 103 | 41 / 27 / 96 |
+| 256 KiB | 31 / 54 / 95 | 40 / 61 / 101 | 67 / 58 / 126 |
+| 4 MiB | 31 / 55 / 95 | 40 / 62 / 101 | 67 / 62 / 115 |
+
+- The coherency hub alone costs ~29 % on sequential read and ~12 % on random access versus the non-coherent SoC (and ~1.9k LUT).
+- Against the hub baseline an L2 that holds the set: random access 2.1x faster, sequential and copy unchanged; when the set exceeds the L2: sequential 1.7x slower, copy ~1.5x slower, random unchanged.
+
+### Revised recommendation (supersedes "provisional recommendation" above)
+Do not add an L2 yet. Start with the hub-only coherent SoC (needed for DMA) and decide on an L2 with a Linux workload: it helps only random access
+over sets between the L1 and the L2 size, and penalises everything larger. If random-access sets of 64-256 KiB dominate, 128-256 KiB (4-8 URAM) is the size to try;
+512 KiB and above give no board-measured benefit that justifies the extra Fmax loss (its image misses 333 MHz timing).
