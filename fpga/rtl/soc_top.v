@@ -34,7 +34,11 @@ module soc_top #(
     input  wire        key_rst,
     output wire [7:0]  led,
     output wire        uart_tx,
-    input  wire        uart_rx
+    input  wire        uart_rx,
+    output wire        sd_clk,
+    output wire        sd_cmd,   // SPI MOSI
+    input  wire        sd_dat0,  // SPI MISO
+    output wire        sd_dat3   // SPI chip select (active low)
 );
     // ---------------------------------------------------------------- clocks and resets
     wire clk50_ibuf, mmcm_fb, mmcm_locked, per_clk_raw, per_clk;
@@ -87,7 +91,8 @@ module soc_top #(
     wire [1:0]  p_bresp, p_rresp;
 
     wire        uart_irq;
-    wire [31:0] irq = {30'd0, uart_irq, 1'b0};
+    wire        spi_irq;
+    wire [31:0] irq = {29'd0, spi_irq, uart_irq, 1'b0};
 
 `ifdef WITH_DMA
     wire        dma_awready, dma_wready, dma_bvalid, dma_arready, dma_rvalid;
@@ -218,13 +223,13 @@ module soc_top #(
         .m_axi_araddr(q_araddr), .m_axi_arprot(q_arprot), .m_axi_arvalid(q_arvalid), .m_axi_arready(q_arready),
         .m_axi_rdata(q_rdata), .m_axi_rresp(q_rresp), .m_axi_rvalid(q_rvalid), .m_axi_rready(q_rready));
 
-    // crossbar masters: 0 UART lite, 1 board regs, 2 boot ROM
-    wire [95:0] x_awaddr, x_araddr, x_wdata, x_rdata;
-    wire [8:0]  x_awprot, x_arprot;
-    wire [11:0] x_wstrb;
-    wire [5:0]  x_bresp, x_rresp;
-    wire [2:0]  x_awvalid, x_awready, x_wvalid, x_wready, x_bvalid, x_bready;
-    wire [2:0]  x_arvalid, x_arready, x_rvalid, x_rready;
+    // crossbar masters: 0 UART lite, 1 board regs, 2 boot ROM, 3 SPI (SD card)
+    wire [127:0] x_awaddr, x_araddr, x_wdata, x_rdata;
+    wire [11:0] x_awprot, x_arprot;
+    wire [15:0] x_wstrb;
+    wire [7:0]  x_bresp, x_rresp;
+    wire [3:0]  x_awvalid, x_awready, x_wvalid, x_wready, x_bvalid, x_bready;
+    wire [3:0]  x_arvalid, x_arready, x_rvalid, x_rready;
 
     xbar_per u_xbar (
         .aclk(per_clk), .aresetn(per_rst_n),
@@ -277,4 +282,20 @@ module soc_top #(
         .addr(rm_addr), .we(), .wdata(), .wstrb(), .re(rm_re), .rdata(rm_rdata));
     boot_rom #(.WORDS(4096), .AW(12), .INIT_FILE(ROM_INIT)) u_rom (
         .clk(per_clk), .en(rm_re), .addr(rm_addr[13:2]), .rdata(rm_rdata));
+
+    wire [11:0] sp_addr;
+    wire        sp_we, sp_re;
+    wire [31:0] sp_wdata, sp_rdata;
+    wire [3:0]  sp_wstrb;
+    axil_simple #(.AW(12)) u_if_spi (
+        .clk(per_clk), .rst_n(per_rst_n),
+        .s_awaddr(x_awaddr[107:96]), .s_awvalid(x_awvalid[3]), .s_awready(x_awready[3]),
+        .s_wdata(x_wdata[127:96]), .s_wstrb(x_wstrb[15:12]), .s_wvalid(x_wvalid[3]), .s_wready(x_wready[3]),
+        .s_bresp(x_bresp[7:6]), .s_bvalid(x_bvalid[3]), .s_bready(x_bready[3]),
+        .s_araddr(x_araddr[107:96]), .s_arvalid(x_arvalid[3]), .s_arready(x_arready[3]),
+        .s_rdata(x_rdata[127:96]), .s_rresp(x_rresp[7:6]), .s_rvalid(x_rvalid[3]), .s_rready(x_rready[3]),
+        .addr(sp_addr), .we(sp_we), .wdata(sp_wdata), .wstrb(sp_wstrb), .re(sp_re), .rdata(sp_rdata));
+    spi_sifive u_spi (
+        .clk(per_clk), .rst_n(per_rst_n), .we(sp_we), .addr(sp_addr[6:0]), .wdata(sp_wdata), .re(sp_re), .rdata(sp_rdata),
+        .irq(spi_irq), .sck(sd_clk), .mosi(sd_cmd), .miso(sd_dat0), .cs_n(sd_dat3));
 endmodule
