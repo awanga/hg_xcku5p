@@ -17,8 +17,8 @@ all: $(BUILD)/boot_rom.hex
 $(BUILD):
 	mkdir -p $(BUILD)
 
-$(BUILD)/boot.elf: ../common/crt0.S main.c boot.ld | $(BUILD)
-	$(CROSS)gcc $(CFLAGS) $(DEFS) $(LDFLAGS) ../common/crt0.S main.c -o $@ -lgcc
+$(BUILD)/boot.elf: ../common/crt0.S main.c sd.c sd.h boot.ld | $(BUILD)
+	$(CROSS)gcc $(CFLAGS) $(DEFS) $(LDFLAGS) ../common/crt0.S main.c sd.c -o $@ -lgcc
 	$(CROSS)size $@
 
 $(BUILD)/boot_rom.hex: $(BUILD)/boot.elf

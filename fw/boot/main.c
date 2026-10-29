@@ -9,6 +9,7 @@
  * A loaded program that returns lands back here through crt0.
  */
 #include <stdint.h>
+#include "sd.h"
 
 #define UART_BASE 0xF8000000UL
 #define REGS_BASE 0xF8001000UL
@@ -17,7 +18,13 @@
 #define TICK_HZ 100000000UL
 
 #ifndef TEST_BYTES
-#define TEST_BYTES (16UL << 20)
+#define TEST_BYTES (1UL << 20) /* short boot-time test; "T" in the monitor repeats it */
+#endif
+#ifndef SD_WAIT_TICKS
+#define SD_WAIT_TICKS (3 * TICK_HZ)
+#endif
+#ifndef SKIP_SD_BOOT
+#define SKIP_SD_BOOT 0
 #endif
 #ifndef TEST_PASSES
 #define TEST_PASSES 1
@@ -204,7 +211,8 @@ int main(void)
 {
 	uint64_t pass = 0;
 
-	wr32(UART_BASE + UART_CTRL, 0x2); /* reset the RX FIFO only: a returning program may still be draining TX */
+	wr32(UART_BASE + UART_CTRL,
+	     0x2); /* reset the RX FIFO only: a returning program may still be draining TX */
 	puts_uart("\r\nHG-XCKU5P minimal SoC\r\n");
 	puts_uart("CPU clock: ");
 	put_dec(rd32(REGS_BASE + REG_CPU_KHZ));
@@ -216,6 +224,28 @@ int main(void)
 	for (; pass < TEST_PASSES; pass++)
 		run_pass(pass);
 
+	if (!(SKIP_SD_BOOT)) {
+		uint32_t t0 = rd32(REGS_BASE + REG_TICK);
+		long entry;
+
+		puts_uart("SD boot in 3 s, any key for the monitor\r\n");
+		while (rd32(REGS_BASE + REG_TICK) - t0 < SD_WAIT_TICKS)
+			if (rd32(UART_BASE + UART_STAT) & UART_STAT_RX_VALID)
+				goto monitor;
+		entry = sd_boot_load();
+		if (entry > 0) {
+			puts_uart("SD boot: jump to 0x");
+			put_hex((uint64_t)entry, 8);
+			puts_uart("\r\n");
+			__asm__ volatile("fence rw, rw; fence.i");
+			((void (*)(void))(uintptr_t)entry)();
+		}
+		puts_uart("SD boot failed: ");
+		puts_uart(entry < 0 ? "-" : "");
+		put_dec((uint64_t)(entry < 0 ? -entry : entry));
+		puts_uart("\r\n");
+	}
+monitor:
 	for (;;) {
 		char c;
 		uint64_t addr, len, sum = 0;

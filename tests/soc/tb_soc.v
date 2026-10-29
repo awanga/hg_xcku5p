@@ -10,6 +10,8 @@ module tb_soc;
     parameter LAT = 20;
     parameter PASSES = 2;
     parameter integer MEM_WORDS = 1 << 21; // 64 MiB of 256-bit words, address wraps
+    parameter integer WAIT_APP = 0;        // 1: also wait for the loaded/booted program to print and the ROM to restart
+    parameter SD_IMAGE = "sd.hex";          // SD card contents (one hex byte per line)
     parameter RX_HEX = "";                 // optional UART receive byte stream (one hex byte per line), e.g. a loader session
     parameter integer GAP = 0;             // idle cycles between 256-bit beats (1 models a 200 MHz DDR4 user clock under a 400 MHz core)
     parameter integer CORRUPT = 0;         // fault injection: flip bit 0 of read data for beats at this index (0 = off)
@@ -81,7 +83,8 @@ module tb_soc;
     wire sel_rom  = (pa_addr[31:16] == 16'h1000);
     wire sel_uart = (pa_addr[31:12] == 20'hF8000);
     wire sel_regs = (pa_addr[31:12] == 20'hF8001);
-    reg  [2:0] rsel;
+    wire sel_spi  = (pa_addr[31:12] == 20'hF8002);
+    reg  [3:0] rsel;
     wire [31:0] rom_rd, regs_rd;
     // UART receive model: STAT bit 0 = byte available, RX register pops the queue.
     reg [7:0] rxq [0:8191];
@@ -95,8 +98,8 @@ module tb_soc;
         end
     end
     always @(posedge clk) if (pa_re) begin
-        rsel <= {sel_uart, sel_regs, sel_rom};
-        uart_rd <= (pa_addr[3:2] == 2'd0) ? {24'd0, rxq[rx_rd]} : {31'd0, rx_rd < rx_n};
+        rsel <= {sel_spi, sel_uart, sel_regs, sel_rom};
+        uart_rd <= (pa_addr[3:2] == 2'd0) ? {24'd0, rxq[rx_rd]} : {29'd0, 1'b1, 1'b0, rx_rd < rx_n};
         if (sel_uart && pa_addr[3:2] == 2'd0 && rx_rd < rx_n) rx_rd <= rx_rd + 1;
     end
     boot_rom #(.WORDS(4096), .AW(12), .INIT_FILE(ROM_INIT)) u_rom (
@@ -105,7 +108,13 @@ module tb_soc;
     soc_regs #(.CPU_KHZ(400000)) u_regs (
         .clk(clk), .rst_n(~rst), .we(pa_we && sel_regs), .addr(pa_addr[4:2]), .wdata(pa_wdata), .wstrb(pa_wstrb),
         .re(pa_re && sel_regs), .rdata(regs_rd), .led(led), .key_in(1'b0), .ddr_calib_in(1'b1), .ddr_rst_n_in(1'b1));
-    assign pa_rdata = rsel[0] ? rom_rd : (rsel[1] ? regs_rd : (rsel[2] ? uart_rd : 32'd0));
+    wire [31:0] spi_rd;
+    wire sd_sck, sd_mosi, sd_miso, sd_cs_n;
+    spi_sifive u_spi (
+        .clk(clk), .rst_n(~rst), .we(pa_we && sel_spi), .addr(pa_addr[6:0]), .wdata(pa_wdata), .re(pa_re && sel_spi),
+        .rdata(spi_rd), .irq(), .sck(sd_sck), .mosi(sd_mosi), .miso(sd_miso), .cs_n(sd_cs_n));
+    sd_card_model #(.IMAGE(SD_IMAGE)) u_sd (.sck(sd_sck), .mosi(sd_mosi), .miso(sd_miso), .cs_n(sd_cs_n));
+    assign pa_rdata = rsel[0] ? rom_rd : (rsel[1] ? regs_rd : (rsel[2] ? uart_rd : (rsel[3] ? spi_rd : 32'd0)));
 
     // UART model: a TX register write prints the character; STAT reads as "never full" (0).
     // The last 11 characters are kept to count complete error-free passes ("errors: 0\r\n").
@@ -235,13 +244,14 @@ module tb_soc;
     always @(posedge clk) cycles <= cycles + 1;
 
     initial begin
-        wait ((passes >= PASSES && (RX_HEX == "" || (app_ran && banners >= 2))) || done);
+        wait ((passes >= PASSES && ((RX_HEX == "" && WAIT_APP == 0) || (app_ran && banners >= 2))) || done);
         repeat (50) @(posedge clk);
         $display("\nTBRESULT passes=%0d cycles=%0d PASS", passes, cycles);
         $finish;
     end
     initial begin
         #200000000;
+        $display("\nmem@40100000 = %h", mem[(32'h40100000 >> 5) & (MEM_WORDS - 1)]);
         $display("\nTBRESULT passes=%0d cycles=%0d FAIL (watchdog)", passes, cycles);
         $finish;
     end

@@ -99,5 +99,26 @@ run_pe mut_sr_status "$ai" "$b/mut_sr_status.v" FAIL
 sed 's/rdata_q  <= rdata;/rdata_q  <= 32'"'"'d0;/' "$ai" >"$b/mut_ai_rdata.v"
 cmp -s "$ai" "$b/mut_ai_rdata.v" && { echo "FAIL mutant ai_rdata unchanged"; fail=1; }
 run_pe mut_ai_rdata "$b/mut_ai_rdata.v" "$sr" FAIL
+
+# spi_sifive
+sp=$here/fpga/rtl/spi_sifive.v
+tbs=$here/tests/rtl/tb_spi_sifive.v
+verilator --lint-only -Wall -Wno-DECLFILENAME "$sp" >"$b/lint_spi.log" 2>&1 && echo "PASS lint spi_sifive" || {
+	echo "FAIL lint spi_sifive"; head "$b/lint_spi.log"; fail=1; }
+run_sp() { # name dut expect
+	iverilog -g2012 -o "$b/$1.vvp" "$tbs" "$2" >"$b/$1.build.log" 2>&1 || { echo "FAIL $1 (build)"; fail=1; return; }
+	timeout 300 vvp "$b/$1.vvp" >"$b/$1.log" 2>&1
+	grep -q "TBRESULT.* $3\$" "$b/$1.log" && echo "PASS $1 [icarus, expect $3: $(grep TBRESULT "$b/$1.log" | cut -d' ' -f2-3)]" || { echo "FAIL $1 [expected $3]"; grep -E 'TBRESULT|FAIL:' "$b/$1.log" | head -3; fail=1; }
+}
+run_sp spi "$sp" PASS
+sed 's/if (!pha) rxreg <= lsb_first/if (pha) rxreg <= lsb_first/' "$sp" >"$b/mut_spi_edge.v"
+cmp -s "$sp" "$b/mut_spi_edge.v" && { echo "FAIL mutant spi_edge unchanged"; fail=1; }
+run_sp mut_spi_edge "$b/mut_spi_edge.v" FAIL
+sed "s/(csmode == 2'd2) ||/(csmode == 2'd1) ||/" "$sp" >"$b/mut_spi_cs.v"
+cmp -s "$sp" "$b/mut_spi_cs.v" && { echo "FAIL mutant spi_cs unchanged"; fail=1; }
+run_sp mut_spi_cs "$b/mut_spi_cs.v" FAIL
+sed 's/assign mosi = lsb_first ? shreg\[0\] : shreg\[7\];/assign mosi = shreg[7];/' "$sp" >"$b/mut_spi_lsb.v"
+cmp -s "$sp" "$b/mut_spi_lsb.v" && { echo "FAIL mutant spi_lsb unchanged"; fail=1; }
+run_sp mut_spi_lsb "$b/mut_spi_lsb.v" FAIL
 [ "$fail" = 0 ] && echo "ALL PASS" || echo "FAILURES"
 exit "$fail"
