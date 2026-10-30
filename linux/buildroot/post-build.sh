@@ -1,13 +1,40 @@
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Run by Buildroot with the target dir as $1. The kernel does not mount devtmpfs for an initramfs root, so busybox init
-# must do it before anything touches /dev.
+# Run by Buildroot with the target dir as $1 (the same dir is reused across runs, so every edit must be idempotent).
 set -eu
-sed -i '0,/^::sysinit:/s||::sysinit:/bin/mount -t devtmpfs devtmpfs /dev\n::sysinit:|' "$1/etc/inittab"
-grep -q 'mount -t devtmpfs' "$1/etc/inittab"
-# The SD root is flash: no access-time writes, and the journal commits every 60 s instead of 5 s. busybox `mount -o remount`
-# ignores the fstab options, so init's remount of / is given them explicitly; fstab carries them for later `mount -a` runs.
-sed -i 's|^::sysinit:/bin/mount -o remount,rw /$|::sysinit:/bin/mount -o remount,rw,noatime /|' "$1/etc/inittab"
-grep -q 'remount,rw,noatime' "$1/etc/inittab"
-sed -i 's|^/dev/root\t.*|/dev/root\t/\text4\trw,noauto,noatime,commit=60\t0\t1|' "$1/etc/fstab"
-grep -q 'noatime,commit=60' "$1/etc/fstab"
+inittab=$1/etc/inittab
+fstab=$1/etc/fstab
+
+# The kernel does not mount devtmpfs for an initramfs root, so busybox init must do it before anything touches /dev.
+grep -q 'mount -t devtmpfs' "$inittab" ||
+	sed -i '0,/^::sysinit:/s||::sysinit:/bin/mount -t devtmpfs devtmpfs /dev\n::sysinit:|' "$inittab"
+grep -q 'mount -t devtmpfs' "$inittab"
+awk '!(/mount -t devtmpfs/ && seen++)' "$inittab" >"$inittab.new" && cat "$inittab.new" >"$inittab" && rm "$inittab.new"
+
+# The SD root is read-only (mounted ro by the kernel command line) so a power cut cannot corrupt it. An initramfs root is
+# already writable, so init's default remount is not needed in either case.
+sed -i '/^::sysinit:\/bin\/mount -o remount,rw/d' "$inittab"
+! grep -q 'remount,rw' "$inittab"
+
+# Persistent state lives on the second SD partition: journalled, noatime, journal committed every 60 s to limit flash wear.
+# /dev/mmcblk0p2 is absent for an initramfs boot and `mount -a` then reports an error that is harmless.
+sed -i 's|^/dev/root\t.*|/dev/root\t/\text4\tro,noauto\t0\t0|' "$fstab"
+grep -q '^/dev/root.*ro,noauto' "$fstab"
+grep -q '^/dev/mmcblk0p2' "$fstab" ||
+	printf '/dev/mmcblk0p2\t/data\text4\trw,noatime,commit=60\t0\t0\n' >>"$fstab"
+mkdir -p "$1/data"
+
+# root's home is bind-mounted from the data partition so shell history and files survive reboots.
+cat >"$1/etc/init.d/S03data" <<'SCRIPT'
+#!/bin/sh
+case "$1" in
+start)
+	if grep -q ' /data ' /proc/mounts; then
+		mkdir -p /data/root
+		chmod 700 /data/root
+		mount --bind /data/root /root
+	fi
+	;;
+esac
+SCRIPT
+chmod 755 "$1/etc/init.d/S03data"

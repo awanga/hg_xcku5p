@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT
 /*
- * Boot with the root filesystem on the first SD card partition (ext4, persistent). It is mounted read-only here and remounted
- * read-write by init with the fstab options (noatime): noatime is a VFS flag that rootflags cannot carry.
+ * Boot with the root filesystem on the first SD card partition (ext4, journal-less, read-only for good). Persistent state is on
+ * partition 2, mounted at /data by init.
  */
 /dts-v1/;
 #include "hg-xcku5p.dtsi"
 
 / {
 	chosen {
-		bootargs = "console=ttyUL0,230400 earlycon=sbi root=/dev/mmcblk0p1 rootwait ro rootfstype=ext4 rootflags=commit=60";
+		bootargs = "console=ttyUL0,230400 earlycon=sbi root=/dev/mmcblk0p1 rootwait ro rootfstype=ext4";
 	};
 };
