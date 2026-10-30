@@ -38,7 +38,18 @@ module soc_top #(
     output wire        sd_clk,
     output wire        sd_cmd,   // SPI MOSI
     input  wire        sd_dat0,  // SPI MISO
-    output wire        sd_dat3   // SPI chip select (active low)
+    output wire        sd_dat3,  // SPI chip select (active low)
+    // RTL8211EG in GMII mode (bank 87, 3.3 V). MDC/MDIO/INT/COL/CRS have no FPGA pin.
+    input  wire        eth_rx_clk,
+    input  wire        eth_tx_clk,   // 10/100 only; unused by the 1000 Mb/s GMII PHY core
+    output wire        eth_gtx_clk,
+    output wire        eth_rst_n,
+    output wire [7:0]  eth_txd,
+    output wire        eth_tx_en,
+    output wire        eth_tx_er,
+    input  wire [7:0]  eth_rxd,
+    input  wire        eth_rx_dv,
+    input  wire        eth_rx_er
 );
     // ---------------------------------------------------------------- clocks and resets
     wire clk50_ibuf, mmcm_fb, mmcm_locked, per_clk_raw, per_clk;
@@ -92,7 +103,8 @@ module soc_top #(
 
     wire        uart_irq;
     wire        spi_irq;
-    wire [31:0] irq = {29'd0, spi_irq, uart_irq, 1'b0};
+    wire        eth_irq;
+    wire [31:0] irq = {28'd0, eth_irq, spi_irq, uart_irq, 1'b0};
 
 `ifdef WITH_DMA
     wire        dma_awready, dma_wready, dma_bvalid, dma_arready, dma_rvalid;
@@ -223,13 +235,13 @@ module soc_top #(
         .m_axi_araddr(q_araddr), .m_axi_arprot(q_arprot), .m_axi_arvalid(q_arvalid), .m_axi_arready(q_arready),
         .m_axi_rdata(q_rdata), .m_axi_rresp(q_rresp), .m_axi_rvalid(q_rvalid), .m_axi_rready(q_rready));
 
-    // crossbar masters: 0 UART lite, 1 board regs, 2 boot ROM, 3 SPI (SD card)
-    wire [127:0] x_awaddr, x_araddr, x_wdata, x_rdata;
-    wire [11:0] x_awprot, x_arprot;
-    wire [15:0] x_wstrb;
-    wire [7:0]  x_bresp, x_rresp;
-    wire [3:0]  x_awvalid, x_awready, x_wvalid, x_wready, x_bvalid, x_bready;
-    wire [3:0]  x_arvalid, x_arready, x_rvalid, x_rready;
+    // crossbar masters: 0 UART lite, 1 board regs, 2 boot ROM, 3 SPI (SD card), 4 LiteEth (CSRs 0xF8020000, buffers 0xF8030000)
+    wire [159:0] x_awaddr, x_araddr, x_wdata, x_rdata;
+    wire [14:0] x_awprot, x_arprot;
+    wire [19:0] x_wstrb;
+    wire [9:0]  x_bresp, x_rresp;
+    wire [4:0]  x_awvalid, x_awready, x_wvalid, x_wready, x_bvalid, x_bready;
+    wire [4:0]  x_arvalid, x_arready, x_rvalid, x_rready;
 
     xbar_per u_xbar (
         .aclk(per_clk), .aresetn(per_rst_n),
@@ -298,4 +310,27 @@ module soc_top #(
     spi_sifive u_spi (
         .clk(per_clk), .rst_n(per_rst_n), .we(sp_we), .addr(sp_addr[6:0]), .wdata(sp_wdata), .re(sp_re), .rdata(sp_rdata),
         .irq(spi_irq), .sck(sd_clk), .mosi(sd_cmd), .miso(sd_dat0), .cs_n(sd_dat3));
+
+    // The core's own PHY reset is only 256 cycles; PHYs want RSTB low for milliseconds, so hold it ~21 ms (2^21 per_clk cycles)
+    // after per_clk is up and AND it with the core's reset.
+    reg [21:0] eth_rst_cnt = 22'd0;
+    always @(posedge per_clk)
+        if (!per_rst_n) eth_rst_cnt <= 22'd0;
+        else if (!eth_rst_cnt[21]) eth_rst_cnt <= eth_rst_cnt + 1'b1;
+    wire core_eth_rst_n;
+    assign eth_rst_n = core_eth_rst_n & eth_rst_cnt[21];
+
+    // LiteEth clocks its CSR/buffer side with per_clk; the eth_rx/eth_tx domains come from the PHY's RX clock inside the core.
+    liteeth_core u_eth (
+        .sys_clock(per_clk), .sys_reset(~per_rst_n),
+        .bus_awaddr(x_awaddr[159:128]), .bus_awprot(x_awprot[14:12]), .bus_awvalid(x_awvalid[4]), .bus_awready(x_awready[4]),
+        .bus_wdata(x_wdata[159:128]), .bus_wstrb(x_wstrb[19:16]), .bus_wvalid(x_wvalid[4]), .bus_wready(x_wready[4]),
+        .bus_bresp(x_bresp[9:8]), .bus_bvalid(x_bvalid[4]), .bus_bready(x_bready[4]),
+        .bus_araddr(x_araddr[159:128]), .bus_arprot(x_arprot[14:12]), .bus_arvalid(x_arvalid[4]), .bus_arready(x_arready[4]),
+        .bus_rdata(x_rdata[159:128]), .bus_rresp(x_rresp[9:8]), .bus_rvalid(x_rvalid[4]), .bus_rready(x_rready[4]),
+        .interrupt(eth_irq),
+        .gmii_clocks_rx(eth_rx_clk), .gmii_clocks_tx(eth_tx_clk), .gmii_clocks_gtx(eth_gtx_clk),
+        .gmii_rst_n(core_eth_rst_n), .gmii_tx_data(eth_txd), .gmii_tx_en(eth_tx_en), .gmii_tx_er(eth_tx_er),
+        .gmii_rx_data(eth_rxd), .gmii_rx_dv(eth_rx_dv), .gmii_rx_er(eth_rx_er),
+        .gmii_col(1'b0), .gmii_crs(1'b0), .gmii_int_n(1'b1), .gmii_mdc(), .gmii_mdio());
 endmodule
