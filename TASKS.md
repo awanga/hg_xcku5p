@@ -35,8 +35,9 @@
 - Decision (user, 2026-10-29): CPU and DDR4 share one clock (ui_clk, 333.33 MHz at DDR4-2667). Status: SoC bitstream (build/soc/vv_333)
   met timing (WNS +0.006, ExplorePostRoutePhysOpt) and ran on the board: 0 errors, CPU stream write/read 350/516 MB/s. UART loader
   (fw/boot, tools/load.py, 921600 baud) passes simulation; bitstream build/soc/vv_333b with the loader was started and NOT yet loaded on the board.
-- Status (2026-10-29): Linux 6.18.59 + OpenSBI 1.9 + Buildroot boots to a login prompt on the board (validation/linux-bringup.md). Next: SD/Ethernet/storage,
-  faster image loading (own UART >230400 baud or SD boot), L2 decision with a Linux workload, timing margin.
+- Status (2026-10-30): Linux 6.18.59 + OpenSBI 1.9 + Buildroot boots to a login prompt on the board (validation/linux-bringup.md), now also cold from the SD
+  card (ROM -> OpenSBI -> kernel, read-only ext4 root on p1, journalled noatime /data on p2, root home persists across reset; resets during the ROM
+  read and during Linux boot recover). vv_sd2 misses timing by 0.065 ns (ran). Next: Ethernet (LiteEth GMII), L2 decision with a Linux workload, timing margin.
 - (older) Next: when build/soc/vv_333b.log shows EXIT=0, `openFPGALoader --cable ft232 build/soc/vv_333b/soc.bit`, then
   `tools/load.py fw/membench/build/membench_app.bin` to measure real L2-less latency vs the simulation model; then rerun L2 study on hardware;
   Linux-like workload; VexRiscv-SMP sim baseline.
@@ -105,7 +106,8 @@
   - Acceptance: exact configuration is Linux-capable and boot firmware can enter the kernel with a valid memory map.
 - [ ] Add a deterministic address map and device-tree generation/check.
   - Acceptance: generated DTB matches the synthesized hardware; stale DTBs are rejected by build/release checks.
-- [ ] Add SD storage controller and minimum boot interface.
+- [x] Add SD storage controller and minimum boot interface (2026-10-30: SPI-mode SD, spi_sifive.v + ROM driver; ROM boots OpenSBI+Linux from the card
+  on the board; Linux mounts a read-only ext4 root and a persistent /data; decisions/0005, build `vv_sd2`). Not measured: ROM read speed, long-run reliability.
   - Acceptance: boot artifacts can be read reliably from the intended SD path.
 - [ ] Generate synthesis/implementation reports and initial resource/timing baselines.
   - Acceptance: utilization, Fmax/slack, DRCs, warnings, and report files are archived with tool version and source SHA.
