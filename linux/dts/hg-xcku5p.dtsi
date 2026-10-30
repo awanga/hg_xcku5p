@@ -95,6 +95,23 @@
 			};
 		};
 
+		/*
+		 * LiteEth MAC (fpga/ip/liteeth/liteeth_gmii.yml) behind the RTL8211EG in GMII mode. MDC/MDIO are not wired, so there is
+		 * no PHY node: the driver does not use phylib and the link is whatever the PHY auto-negotiates. The MAC address is a
+		 * locally administered default; a bootloader or the user should override it when more than one board shares a LAN.
+		 */
+		eth0: ethernet@f8021000 {
+			compatible = "litex,liteeth";
+			reg = <0xf8021000 0x100>, <0xf8020800 0x100>, <0xf8030000 0x2000>;
+			reg-names = "mac", "mdio", "buffer";
+			interrupt-parent = <&plic>;
+			interrupts = <3>;
+			litex,rx-slots = <2>;
+			litex,tx-slots = <2>;
+			litex,slot-size = <0x800>;
+			local-mac-address = [02 48 47 4b 55 35];
+		};
+
 		uart0: serial@f8000000 {
 			compatible = "xlnx,xps-uartlite-1.00.a";
 			reg = <0xf8000000 0x1000>;
