@@ -100,9 +100,9 @@
 		 * no PHY node: the driver does not use phylib and the link is whatever the PHY auto-negotiates. The MAC address is a
 		 * locally administered default; a bootloader or the user should override it when more than one board shares a LAN.
 		 */
-		eth0: ethernet@f8021000 {
+		eth0: ethernet@f8009000 {
 			compatible = "litex,liteeth";
-			reg = <0xf8021000 0x100>, <0xf8020800 0x100>, <0xf8030000 0x2000>;
+			reg = <0xf8009000 0x100>, <0xf8008800 0x100>, <0xf800c000 0x2000>;
 			reg-names = "mac", "mdio", "buffer";
 			interrupt-parent = <&plic>;
 			interrupts = <3>;
