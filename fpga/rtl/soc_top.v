@@ -41,7 +41,6 @@ module soc_top #(
     output wire        sd_dat3,  // SPI chip select (active low)
     // RTL8211EG in GMII mode (bank 87, 3.3 V). MDC/MDIO/INT/COL/CRS have no FPGA pin.
     input  wire        eth_rx_clk,
-    input  wire        eth_tx_clk,   // 10/100 only; unused by the 1000 Mb/s GMII PHY core
     output wire        eth_gtx_clk,
     output wire        eth_rst_n,
     output wire [7:0]  eth_txd,
@@ -52,7 +51,7 @@ module soc_top #(
     input  wire        eth_rx_er
 );
     // ---------------------------------------------------------------- clocks and resets
-    wire clk50_ibuf, mmcm_fb, mmcm_locked, per_clk_raw, per_clk;
+    wire clk50_ibuf, mmcm_fb, mmcm_locked, per_clk_raw, per_clk, eth_clk125;
     wire ui_clk, ui_rst, calib;
     wire cpu_clk = ui_clk;
 
@@ -61,11 +60,12 @@ module soc_top #(
         .CLKIN1_PERIOD(20.0),
         .DIVCLK_DIVIDE(1),
         .CLKFBOUT_MULT_F(20.0),   // 1000 MHz VCO
-        .CLKOUT0_DIVIDE_F(10.0)   // 100 MHz
+        .CLKOUT0_DIVIDE_F(10.0),  // 100 MHz
+        .CLKOUT1_DIVIDE(8)        // 125 MHz: GTX_CLK and the Ethernet TX domain (the PHY has no RX clock before link)
     ) u_mmcm (
         .CLKIN1(clk50_ibuf), .CLKIN2(1'b0), .CLKINSEL(1'b1),
         .CLKFBIN(mmcm_fb), .CLKFBOUT(mmcm_fb),
-        .CLKOUT0(per_clk_raw),
+        .CLKOUT0(per_clk_raw), .CLKOUT1(eth_clk125),
         .LOCKED(mmcm_locked), .RST(1'b0), .PWRDWN(1'b0),
         .DADDR(7'd0), .DCLK(1'b0), .DEN(1'b0), .DI(16'd0), .DWE(1'b0),
         .PSCLK(1'b0), .PSEN(1'b0), .PSINCDEC(1'b0));
@@ -335,7 +335,7 @@ module soc_top #(
         .bus_araddr(eth_araddr), .bus_arprot(x_arprot[14:12]), .bus_arvalid(x_arvalid[4]), .bus_arready(x_arready[4]),
         .bus_rdata(x_rdata[159:128]), .bus_rresp(x_rresp[9:8]), .bus_rvalid(x_rvalid[4]), .bus_rready(x_rready[4]),
         .interrupt(eth_irq),
-        .gmii_clocks_rx(eth_rx_clk), .gmii_clocks_tx(eth_tx_clk), .gmii_clocks_gtx(eth_gtx_clk),
+        .gmii_clocks_rx(eth_rx_clk), .gmii_clocks_tx(eth_clk125), .gmii_clocks_gtx(eth_gtx_clk),
         .gmii_rst_n(core_eth_rst_n), .gmii_tx_data(eth_txd), .gmii_tx_en(eth_tx_en), .gmii_tx_er(eth_tx_er),
         .gmii_rx_data(eth_rxd), .gmii_rx_dv(eth_rx_dv), .gmii_rx_er(eth_rx_er),
         .gmii_col(1'b0), .gmii_crs(1'b0), .gmii_int_n(1'b1), .gmii_mdc(), .gmii_mdio());

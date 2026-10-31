@@ -26,6 +26,7 @@ mut() { # name sed-expr
 
 run core "$core" PASS
 mut tx_bit0 's/^    gmii_tx_data <= maccore_ethphy_sink_payload_data;/    gmii_tx_data <= maccore_ethphy_sink_payload_data ^ 8'"'"'h01;/'
+mut tx_clk_from_rx 's/maccore_ethphy_eth_tx_clk = gmii_clocks_tx;/maccore_ethphy_eth_tx_clk = gmii_clocks_rx;/'
 mut irq_dead 's/^assign interrupt = wishbone_interface_ev_irq;/assign interrupt = 1'"'"'b0;/'
 mut crc_check_off 's/core_liteethmaccrc32checker_crc_error = (core_liteethmaccrc32checker_crc_crc_next != 32.d3338984827);/core_liteethmaccrc32checker_crc_error = 1'"'"'b0;/'
 [ "$fail" = 0 ] && echo "ALL PASS" || echo "FAILURES"

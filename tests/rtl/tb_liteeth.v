@@ -7,7 +7,10 @@
 module tb_liteeth;
     reg clk = 1'b0, rxclk = 1'b0;
     always #5 clk = ~clk;          // 100 MHz sys
-    always #4 rxclk = ~rxclk;      // 125 MHz recovered clock (also the TX clock of this PHY core)
+    reg rx_run = 1'b0;
+    always #4 if (rx_run) rxclk = ~rxclk;   // 125 MHz clock recovered by the PHY once a link is up; absent before
+    reg txclk = 1'b0;
+    initial #1.7 forever #4 txclk = ~txclk;   // 125 MHz generated in the FPGA: TX domain and GTX_CLK, unrelated phase to rxclk
     reg rst = 1'b1;
 
     reg  [31:0] awaddr = 0, wdata = 0, araddr = 0;
@@ -30,7 +33,7 @@ module tb_liteeth;
         .bus_araddr(araddr), .bus_arprot(3'd0), .bus_arvalid(arvalid), .bus_arready(arready),
         .bus_rdata(rdata), .bus_rresp(rresp), .bus_rvalid(rvalid), .bus_rready(rready),
         .interrupt(irq),
-        .gmii_clocks_rx(rxclk), .gmii_clocks_tx(1'b0), .gmii_clocks_gtx(gtx),
+        .gmii_clocks_rx(rxclk), .gmii_clocks_tx(txclk), .gmii_clocks_gtx(gtx),
         .gmii_rst_n(rst_n), .gmii_tx_data(tx_data), .gmii_tx_en(tx_en), .gmii_tx_er(tx_er),
         .gmii_rx_data(rx_data), .gmii_rx_dv(rx_dv), .gmii_rx_er(1'b0),
         .gmii_col(1'b0), .gmii_crs(1'b0), .gmii_int_n(1'b1), .gmii_mdc(), .gmii_mdio());
@@ -120,8 +123,8 @@ module tb_liteeth;
     reg [31:0] v, crc;
     integer i, k;
 
-    // GMII transmit monitor on the TX clock (= rxclk for this PHY core)
-    always @(posedge rxclk) if (tx_en && cap_n < 256) begin cap[cap_n] = tx_data; cap_n = cap_n + 1; end
+    // GMII transmit monitor on the TX clock
+    always @(posedge txclk) if (tx_en && cap_n < 256) begin cap[cap_n] = tx_data; cap_n = cap_n + 1; end
 
     task send_frame(input corrupt);
         reg [31:0] c;
@@ -171,7 +174,7 @@ module tb_liteeth;
         axi_wr(CSR + R_SLOT, 0);
         axi_wr(CSR + R_LEN, N);
         axi_wr(CSR + R_START, 1);
-        repeat (200) @(posedge rxclk);
+        repeat (200) @(posedge txclk);
         check(cap_n == 8 + N + 4, "transmitted frame length (preamble+SFD+payload+CRC)");
         for (k = 0; k < 7; k = k + 1) check(cap[k] == 8'h55, "preamble byte");
         check(cap[7] == 8'hD5, "start of frame delimiter");
@@ -183,7 +186,9 @@ module tb_liteeth;
         check(tx_er === 1'b0, "TX_ER stays low");
         axi_rd(CSR + R_READY, v); check(v[0] == 1'b1, "reader ready again after the frame");
 
-        // ---- receive, good frame
+        // ---- receive, good frame (the PHY now has a link and supplies its RX clock)
+        rx_run = 1'b1;
+        repeat (20) @(posedge rxclk);
         axi_wr(CSR + W_EN, 1);
         axi_rd(CSR + W_PEND, v); check(v[0] == 1'b0, "no RX event before a frame");
         check(irq === 1'b0, "interrupt low before a frame");
