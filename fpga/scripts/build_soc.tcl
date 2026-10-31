@@ -36,7 +36,7 @@ set_property -dict [list CONFIG.PROTOCOL AXI4LITE CONFIG.NUM_SI 1 CONFIG.NUM_MI 
     CONFIG.M01_A00_BASE_ADDR 0x00000000F8001000 CONFIG.M01_A00_ADDR_WIDTH 12 \
     CONFIG.M02_A00_BASE_ADDR 0x0000000010000000 CONFIG.M02_A00_ADDR_WIDTH 16 \
     CONFIG.M03_A00_BASE_ADDR 0x00000000F8002000 CONFIG.M03_A00_ADDR_WIDTH 12 \
-    CONFIG.M04_A00_BASE_ADDR 0x00000000F8020000 CONFIG.M04_A00_ADDR_WIDTH 17] [get_ips xbar_per]
+    CONFIG.M04_A00_BASE_ADDR 0x00000000F8008000 CONFIG.M04_A00_ADDR_WIDTH 15] [get_ips xbar_per]
 create_ip -name axi_uartlite -vendor xilinx.com -library ip -module_name uart_0
 set_property -dict [list CONFIG.C_BAUDRATE 230400 CONFIG.C_S_AXI_ACLK_FREQ_HZ 100000000] [get_ips uart_0]
 generate_target all [get_ips]
@@ -44,7 +44,7 @@ generate_target all [get_ips]
 set liteeth $root/build/liteeth/gateware/liteeth_core.v
 if {![file exists $liteeth]} { error "missing $liteeth: run fpga/scripts/gen_liteeth.sh" }
 add_files [list $root/fpga/rtl/soc_top.v $root/fpga/rtl/axil_simple.v $root/fpga/rtl/boot_rom.v \
-    $root/fpga/rtl/soc_regs.v $root/fpga/rtl/spi_sifive.v $root/fpga/rtl/vexii_ram.v $root/build/soc/$soc/$soc.v \
+    $root/fpga/rtl/soc_regs.v $root/fpga/rtl/spi_sifive.v $root/fpga/rtl/eth_addr_map.v $root/fpga/rtl/vexii_ram.v $root/build/soc/$soc/$soc.v \
     $liteeth]
 add_files -fileset constrs_1 [list $root/fpga/constraints/ddr4_pins.xdc $root/fpga/constraints/bringup_board.xdc \
     $root/fpga/constraints/soc_board.xdc]

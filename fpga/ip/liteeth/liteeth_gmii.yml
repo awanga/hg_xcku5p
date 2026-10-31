@@ -1,5 +1,7 @@
 # LiteEth MAC for the RTL8211EG in GMII mode. Generate with fpga/scripts/gen_liteeth.sh.
-# Address map (the core decodes full addresses): packet buffers at 0xF8030000, CSRs at 0xF8020000.
+# Address map (the core decodes full addresses): CSRs at 0xF8020000 (LiteX needs a 64 KiB CSR region), packet buffers at 0xF8030000.
+# The CPU only reaches 0xF8000000-0xF800FFFF (fpga/scripts/cpu/gen_soc.sh), so fpga/rtl/soc_top.v remaps the 32 KiB window at
+# 0xF8008000: first half to the CSRs, second half to the buffers.
 vendor: xilinx
 device: xcku5p-ffvb676-2-i
 phy: LiteEthPHYGMII

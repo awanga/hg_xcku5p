@@ -65,6 +65,30 @@ module tb_liteeth;
         end
     endtask
 
+    // AW and W presented at different times, as the clock converter and crossbar do: AW first (ad = 0, wd > 0) or W first.
+    task axi_wr_skew(input [31:0] a, input [31:0] d, input integer ad, input integer wd);
+        integer t, n;
+        reg aw_done, w_done;
+        begin
+            @(negedge clk); bready = 1; aw_done = 0; w_done = 0; t = 0;
+            while (!(aw_done && w_done) && t < 2000) begin
+                if (!aw_done && t == ad) begin awaddr = a; awvalid = 1; end
+                if (!w_done && t == wd) begin wdata = d; wvalid = 1; end
+                @(posedge clk);
+                if (awvalid && awready) begin aw_done = 1; end
+                if (wvalid && wready) begin w_done = 1; end
+                @(negedge clk);
+                if (aw_done) awvalid = 0;
+                if (w_done) wvalid = 0;
+                t = t + 1;
+            end
+            t = 0;
+            while (!bvalid && t < 2000) begin @(posedge clk); t = t + 1; end
+            check(bvalid && bresp == 2'b00, "skewed write response OKAY");
+            @(negedge clk); bready = 0; awvalid = 0; wvalid = 0;
+        end
+    endtask
+
     task axi_rd(input [31:0] a, output [31:0] d);
         integer t;
         begin
@@ -130,6 +154,15 @@ module tb_liteeth;
         rst = 1'b0;
         repeat (400) @(posedge clk); // PHY hardware reset counter (256 cycles)
         check(rst_n === 1'b1, "PHY reset released");
+
+        // ---- AXI-Lite channel skew: write the RX event enable register and read it back
+        for (i = 0; i < 6; i = i + 1) begin
+            axi_wr_skew(CSR + W_EN, 0, 0, i);          // AW first, W i cycles later
+            axi_rd(CSR + W_EN, v); check(v[0] == 1'b0, "skewed write (AW first) cleared enable");
+            axi_wr_skew(CSR + W_EN, 1, i, 0);          // W first, AW i cycles later
+            axi_rd(CSR + W_EN, v); check(v[0] == 1'b1, "skewed write (W first) set enable");
+        end
+        axi_wr(CSR + W_EN, 0);
 
         // ---- transmit
         for (i = 0; i < N / 4; i = i + 1)

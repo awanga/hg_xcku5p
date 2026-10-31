@@ -123,5 +123,22 @@ run_sp mut_spi_lsb "$b/mut_spi_lsb.v" FAIL
 sed 's/if (!frame_tx_only \&\& rx_cnt != DEPTH)/if (!tx_only \&\& rx_cnt != DEPTH)/' "$sp" >"$b/mut_spi_txo.v"
 cmp -s "$sp" "$b/mut_spi_txo.v" && { echo "FAIL mutant spi_txo unchanged"; fail=1; }
 run_sp mut_spi_txo "$b/mut_spi_txo.v" FAIL
+# eth_addr_map
+em=$here/fpga/rtl/eth_addr_map.v
+tbm=$here/tests/rtl/tb_eth_addr_map.v
+verilator --lint-only -Wall -Wno-DECLFILENAME "$em" >"$b/lint_em.log" 2>&1 && echo "PASS lint eth_addr_map" || {
+	echo "FAIL lint eth_addr_map"; head "$b/lint_em.log"; fail=1; }
+run_em() { # name dut expect
+	iverilog -g2005 -o "$b/$1.vvp" "$tbm" "$2" >"$b/$1.build.log" 2>&1 || { echo "FAIL $1 (build)"; fail=1; return; }
+	timeout 60 vvp "$b/$1.vvp" >"$b/$1.log" 2>&1
+	grep -q "TBRESULT.* $3\$" "$b/$1.log" && echo "PASS $1 [icarus, expect $3]" || { echo "FAIL $1 [expected $3]"; grep -E 'TBRESULT|FAIL' "$b/$1.log" | head -3; fail=1; }
+}
+run_em eth_addr_map "$em" PASS
+sed 's/cpu_addr\[14\], 2.b00/cpu_addr[15], 2'"'"'b00/' "$em" >"$b/mut_em_bit.v"
+cmp -s "$em" "$b/mut_em_bit.v" && { echo "FAIL mutant em_bit unchanged"; fail=1; }
+run_em mut_em_bit "$b/mut_em_bit.v" FAIL
+sed 's/15.b1111_1000_0000_001/15'"'"'b1111_1000_0000_000/' "$em" >"$b/mut_em_base.v"
+cmp -s "$em" "$b/mut_em_base.v" && { echo "FAIL mutant em_base unchanged"; fail=1; }
+run_em mut_em_base "$b/mut_em_base.v" FAIL
 [ "$fail" = 0 ] && echo "ALL PASS" || echo "FAILURES"
 exit "$fail"

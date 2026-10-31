@@ -64,5 +64,6 @@ set_input_delay -clock eth_rx_clk -max 0.500 [get_ports {eth_rx_dv eth_rx_er eth
 set_input_delay -clock eth_rx_clk -min -0.500 [get_ports {eth_rx_dv eth_rx_er eth_rxd[*]}]
 set_false_path -to [get_ports eth_rst_n]
 set_false_path -from [get_ports eth_tx_clk]
-# The MAC's per_clk side and the PHY clock domain only exchange data through LiteEth's own CDC FIFOs/event logic.
-set_clock_groups -asynchronous -group [get_clocks eth_rx_clk] -group [get_clocks -of_objects [get_nets per_clk]] -group [get_clocks -of_objects [get_nets ui_clk]]
+# The MAC's per_clk side and the PHY clock domain only exchange data through LiteEth's own CDC FIFOs/event logic. Do not put ui_clk
+# in a group with per_clk: a clock group is a false path and would override the set_max_delay/set_bus_skew of the cc_per clock converter.
+set_clock_groups -asynchronous -group [get_clocks {eth_rx_clk eth_gtx_clk}] -group [get_clocks -of_objects [get_nets per_clk]]

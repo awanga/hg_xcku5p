@@ -235,7 +235,7 @@ module soc_top #(
         .m_axi_araddr(q_araddr), .m_axi_arprot(q_arprot), .m_axi_arvalid(q_arvalid), .m_axi_arready(q_arready),
         .m_axi_rdata(q_rdata), .m_axi_rresp(q_rresp), .m_axi_rvalid(q_rvalid), .m_axi_rready(q_rready));
 
-    // crossbar masters: 0 UART lite, 1 board regs, 2 boot ROM, 3 SPI (SD card), 4 LiteEth (CSRs 0xF8020000, buffers 0xF8030000)
+    // crossbar masters: 0 UART lite, 1 board regs, 2 boot ROM, 3 SPI (SD card), 4 LiteEth (window 0xF8008000, 32 KiB, remapped below)
     wire [159:0] x_awaddr, x_araddr, x_wdata, x_rdata;
     wire [14:0] x_awprot, x_arprot;
     wire [19:0] x_wstrb;
@@ -320,13 +320,19 @@ module soc_top #(
     wire core_eth_rst_n;
     assign eth_rst_n = core_eth_rst_n & eth_rst_cnt[21];
 
+    // The CPU's peripheral region is 0xF8000000-0xF800FFFF but the core decodes CSRs at 0xF8020000 and buffers at 0xF8030000:
+    // window offset 0x0000-0x3FFF -> core CSRs, 0x4000-0x7FFF -> core buffers (Linux sees them at 0xF8008000 / 0xF800C000).
+    wire [31:0] eth_awaddr, eth_araddr;
+    eth_addr_map u_eth_aw_map (.cpu_addr(x_awaddr[159:128]), .core_addr(eth_awaddr));
+    eth_addr_map u_eth_ar_map (.cpu_addr(x_araddr[159:128]), .core_addr(eth_araddr));
+
     // LiteEth clocks its CSR/buffer side with per_clk; the eth_rx/eth_tx domains come from the PHY's RX clock inside the core.
     liteeth_core u_eth (
         .sys_clock(per_clk), .sys_reset(~per_rst_n),
-        .bus_awaddr(x_awaddr[159:128]), .bus_awprot(x_awprot[14:12]), .bus_awvalid(x_awvalid[4]), .bus_awready(x_awready[4]),
+        .bus_awaddr(eth_awaddr), .bus_awprot(x_awprot[14:12]), .bus_awvalid(x_awvalid[4]), .bus_awready(x_awready[4]),
         .bus_wdata(x_wdata[159:128]), .bus_wstrb(x_wstrb[19:16]), .bus_wvalid(x_wvalid[4]), .bus_wready(x_wready[4]),
         .bus_bresp(x_bresp[9:8]), .bus_bvalid(x_bvalid[4]), .bus_bready(x_bready[4]),
-        .bus_araddr(x_araddr[159:128]), .bus_arprot(x_arprot[14:12]), .bus_arvalid(x_arvalid[4]), .bus_arready(x_arready[4]),
+        .bus_araddr(eth_araddr), .bus_arprot(x_arprot[14:12]), .bus_arvalid(x_arvalid[4]), .bus_arready(x_arready[4]),
         .bus_rdata(x_rdata[159:128]), .bus_rresp(x_rresp[9:8]), .bus_rvalid(x_rvalid[4]), .bus_rready(x_rready[4]),
         .interrupt(eth_irq),
         .gmii_clocks_rx(eth_rx_clk), .gmii_clocks_tx(eth_tx_clk), .gmii_clocks_gtx(eth_gtx_clk),
