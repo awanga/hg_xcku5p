@@ -102,7 +102,7 @@ module soc_top #(
     wire [1:0]  p_bresp, p_rresp;
 
     wire        uart_irq;
-    wire        spi_irq;
+    wire        spi_irq_level, spi_irq;
     wire        eth_irq;
     wire [31:0] irq = {28'd0, eth_irq, spi_irq, uart_irq, 1'b0};
 
@@ -307,9 +307,10 @@ module soc_top #(
         .s_araddr(x_araddr[107:96]), .s_arvalid(x_arvalid[3]), .s_arready(x_arready[3]),
         .s_rdata(x_rdata[127:96]), .s_rresp(x_rresp[7:6]), .s_rvalid(x_rvalid[3]), .s_rready(x_rready[3]),
         .addr(sp_addr), .we(sp_we), .wdata(sp_wdata), .wstrb(sp_wstrb), .re(sp_re), .rdata(sp_rdata));
+    irq_pulse u_spi_irq_pulse (.clk(per_clk), .rst_n(per_rst_n), .level(spi_irq_level), .pulse(spi_irq));
     spi_sifive u_spi (
         .clk(per_clk), .rst_n(per_rst_n), .we(sp_we), .addr(sp_addr[6:0]), .wdata(sp_wdata), .re(sp_re), .rdata(sp_rdata),
-        .irq(spi_irq), .sck(sd_clk), .mosi(sd_cmd), .miso(sd_dat0), .cs_n(sd_dat3));
+        .irq(spi_irq_level), .sck(sd_clk), .mosi(sd_cmd), .miso(sd_dat0), .cs_n(sd_dat3));
 
     // The core's own PHY reset is only 256 cycles; PHYs want RSTB low for milliseconds, so hold it ~21 ms (2^21 per_clk cycles)
     // after per_clk is up and AND it with the core's reset.

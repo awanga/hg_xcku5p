@@ -123,6 +123,23 @@ run_sp mut_spi_lsb "$b/mut_spi_lsb.v" FAIL
 sed 's/if (!frame_tx_only \&\& rx_cnt != DEPTH)/if (!tx_only \&\& rx_cnt != DEPTH)/' "$sp" >"$b/mut_spi_txo.v"
 cmp -s "$sp" "$b/mut_spi_txo.v" && { echo "FAIL mutant spi_txo unchanged"; fail=1; }
 run_sp mut_spi_txo "$b/mut_spi_txo.v" FAIL
+# irq_pulse
+ip_=$here/fpga/rtl/irq_pulse.v
+tbi=$here/tests/rtl/tb_irq_pulse.v
+verilator --lint-only -Wall -Wno-DECLFILENAME "$ip_" >"$b/lint_ip.log" 2>&1 && echo "PASS lint irq_pulse" || {
+	echo "FAIL lint irq_pulse"; head "$b/lint_ip.log"; fail=1; }
+run_ip() { # name dut expect
+	iverilog -g2005 -o "$b/$1.vvp" "$tbi" "$2" >"$b/$1.build.log" 2>&1 || { echo "FAIL $1 (build)"; fail=1; return; }
+	timeout 60 vvp "$b/$1.vvp" >"$b/$1.log" 2>&1
+	grep -q "TBRESULT.* $3\$" "$b/$1.log" && echo "PASS $1 [icarus, expect $3]" || { echo "FAIL $1 [expected $3]"; grep -E 'TBRESULT|FAIL' "$b/$1.log" | head -3; fail=1; }
+}
+run_ip irq_pulse "$ip_" PASS
+sed 's/assign pulse = (cnt != 3.d0);/assign pulse = level;/' "$ip_" >"$b/mut_ip_level.v"
+cmp -s "$ip_" "$b/mut_ip_level.v" && { echo "FAIL mutant ip_level unchanged"; fail=1; }
+run_ip mut_ip_level "$b/mut_ip_level.v" FAIL
+sed 's/if (level \&\& !level_q) cnt/if (level) cnt/' "$ip_" >"$b/mut_ip_edge.v"
+cmp -s "$ip_" "$b/mut_ip_edge.v" && { echo "FAIL mutant ip_edge unchanged"; fail=1; }
+run_ip mut_ip_edge "$b/mut_ip_edge.v" FAIL
 # eth_addr_map
 em=$here/fpga/rtl/eth_addr_map.v
 tbm=$here/tests/rtl/tb_eth_addr_map.v
