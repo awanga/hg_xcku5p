@@ -123,6 +123,23 @@ run_sp mut_spi_lsb "$b/mut_spi_lsb.v" FAIL
 sed 's/if (!frame_tx_only \&\& rx_cnt != DEPTH)/if (!tx_only \&\& rx_cnt != DEPTH)/' "$sp" >"$b/mut_spi_txo.v"
 cmp -s "$sp" "$b/mut_spi_txo.v" && { echo "FAIL mutant spi_txo unchanged"; fail=1; }
 run_sp mut_spi_txo "$b/mut_spi_txo.v" FAIL
+# clk_freq_meter
+cf=$here/fpga/rtl/clk_freq_meter.v
+tbc=$here/tests/rtl/tb_clk_freq_meter.v
+verilator --lint-only -Wall -Wno-DECLFILENAME "$cf" >"$b/lint_cf.log" 2>&1 && echo "PASS lint clk_freq_meter" || {
+	echo "FAIL lint clk_freq_meter"; head "$b/lint_cf.log"; fail=1; }
+run_cf() { # name dut expect
+	iverilog -g2005 -o "$b/$1.vvp" "$tbc" "$2" >"$b/$1.build.log" 2>&1 || { echo "FAIL $1 (build)"; fail=1; return; }
+	timeout 280 vvp "$b/$1.vvp" >"$b/$1.log" 2>&1
+	grep -q "TBRESULT.* $3\$" "$b/$1.log" && echo "PASS $1 [icarus, expect $3]" || { echo "FAIL $1 [expected $3]"; grep -E 'TBRESULT|FAIL' "$b/$1.log" | head -3; fail=1; }
+}
+run_cf clk_freq_meter "$cf" PASS
+sed 's/count <= cnt - snap0;/count <= cnt;/' "$cf" >"$b/mut_cf_diff.v"
+cmp -s "$cf" "$b/mut_cf_diff.v" && { echo "FAIL mutant cf_diff unchanged"; fail=1; }
+run_cf mut_cf_diff "$b/mut_cf_diff.v" FAIL
+sed 's/wire gate = (ph == 2.d1);/wire gate = (ph == 2'"'"'d1) || (ph == 2'"'"'d2);/' "$cf" >"$b/mut_cf_gate.v"
+cmp -s "$cf" "$b/mut_cf_gate.v" && { echo "FAIL mutant cf_gate unchanged"; fail=1; }
+run_cf mut_cf_gate "$b/mut_cf_gate.v" FAIL
 # irq_pulse
 ip_=$here/fpga/rtl/irq_pulse.v
 tbi=$here/tests/rtl/tb_irq_pulse.v

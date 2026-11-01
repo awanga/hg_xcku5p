@@ -19,7 +19,7 @@ module tb_soc_periph;
     wire [31:0] r_wd, r_rd;
     wire [3:0]  r_ws;
     wire [7:0]  led;
-    reg         key = 1'b0, calib = 1'b0, drst = 1'b0;
+    reg         key = 1'b0, calib = 1'b0, drst = 1'b0, ethrst = 1'b0;
 
     axil_simple #(.AW(16)) u_if_r (
         .clk(clk), .rst_n(rst_n),
@@ -31,7 +31,8 @@ module tb_soc_periph;
         .addr(r_addr), .we(r_we), .wdata(r_wd), .wstrb(r_ws), .re(r_re), .rdata(r_rd));
     soc_regs #(.CPU_KHZ(400000)) u_regs (
         .clk(clk), .rst_n(rst_n), .we(r_we), .addr(r_addr[4:2]), .wdata(r_wd), .wstrb(r_ws),
-        .re(r_re), .rdata(r_rd), .led(led), .key_in(key), .ddr_calib_in(calib), .ddr_rst_n_in(drst));
+        .re(r_re), .rdata(r_rd), .led(led), .key_in(key), .ddr_calib_in(calib), .ddr_rst_n_in(drst),
+        .eth_rst_n_in(ethrst), .eth_clk_count_in(32'hCAFE0123));
 
     // rom slave
     reg  [15:0] m_araddr;
@@ -134,6 +135,10 @@ module tb_soc_periph;
         reg_write(16'h000, 32'h000000FF, 4'b0010, 1'b0); // strobe excludes byte 0
         expect32({24'd0, led}, 32'hA5, "LED strobe ignored");
 
+        reg_read(16'h018, v); expect32(v, 32'h0, "ETH status, PHY in reset");
+        ethrst = 1'b1; repeat (4) @(negedge clk);
+        reg_read(16'h018, v); expect32(v, 32'h1, "ETH status, PHY reset released");
+        reg_read(16'h01C, v); expect32(v, 32'hCAFE0123, "ETH clock count passthrough");
         reg_read(16'h004, v); expect32(v, 32'h0, "KEY released");
         key = 1'b1; repeat (4) @(negedge clk);
         reg_read(16'h004, v); expect32(v, 32'h1, "KEY pressed");
@@ -151,7 +156,6 @@ module tb_soc_periph;
         reg_read(16'h014, v); expect32(v, 32'h12345678, "SCRATCH");
         reg_write(16'h014, 32'hAABBCCDD, 4'b0101, 1'b1);
         reg_read(16'h014, v); expect32(v, 32'h12BB56DD, "SCRATCH byte strobes");
-        reg_read(16'h018, v); expect32(v, 32'h0, "unmapped reads 0");
 
         for (i = 0; i < 64; i = i + 1) begin
             rom_read(i * 4, v);

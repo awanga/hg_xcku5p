@@ -6,6 +6,8 @@
 //   0x0C CPU_KHZ ro  CPU clock in kHz (parameter)
 //   0x10 TICK    ro  free-running counter on clk (periph clock), for coarse timing
 //   0x14 SCRATCH rw  32 bits
+//   0x18 ETH     ro  [0] PHY reset released (RSTB high)
+//   0x1C ETHCLK  ro  PHY RX clock edges per 2^15 clk cycles (clk_freq_meter): 125 MHz -> 40960 at a 100 MHz clk, 0 if absent
 // Inputs from other clock domains are double-registered here.
 module soc_regs #(
     parameter CPU_KHZ = 400000
@@ -21,18 +23,22 @@ module soc_regs #(
     output reg  [7:0]  led,
     input  wire        key_in,
     input  wire        ddr_calib_in,
-    input  wire        ddr_rst_n_in
+    input  wire        ddr_rst_n_in,
+    input  wire        eth_rst_n_in,
+    input  wire [31:0] eth_clk_count_in
 );
     reg [31:0] scratch;
     reg [31:0] tick;
     (* ASYNC_REG = "TRUE" *) reg [2:0] key_s;
     (* ASYNC_REG = "TRUE" *) reg [2:0] calib_s;
     (* ASYNC_REG = "TRUE" *) reg [2:0] rst_s;
+    reg [1:0] ethrst_s;
 
     always @(posedge clk) begin
         key_s   <= {key_s[1:0], key_in};
         calib_s <= {calib_s[1:0], ddr_calib_in};
         rst_s   <= {rst_s[1:0], ddr_rst_n_in};
+        ethrst_s <= {ethrst_s[0], eth_rst_n_in};
         tick    <= tick + 1'b1;
         if (!rst_n) begin
             led     <= 8'd0;
@@ -54,6 +60,8 @@ module soc_regs #(
             3'd3: rdata <= CPU_KHZ;
             3'd4: rdata <= tick;
             3'd5: rdata <= scratch;
+            3'd6: rdata <= {31'd0, ethrst_s[1]};
+            3'd7: rdata <= eth_clk_count_in;
             default: rdata <= 32'd0;
             endcase
         end

@@ -279,7 +279,10 @@ module soc_top #(
         .addr(rg_addr), .we(rg_we), .wdata(rg_wdata), .wstrb(rg_wstrb), .re(rg_re), .rdata(rg_rdata));
     soc_regs #(.CPU_KHZ(CPU_KHZ)) u_regs (
         .clk(per_clk), .rst_n(per_rst_n), .we(rg_we), .addr(rg_addr[4:2]), .wdata(rg_wdata), .wstrb(rg_wstrb),
-        .re(rg_re), .rdata(rg_rdata), .led(led), .key_in(key_rst), .ddr_calib_in(calib), .ddr_rst_n_in(ui_rst_n));
+        .re(rg_re), .rdata(rg_rdata), .led(led), .key_in(key_rst), .ddr_calib_in(calib), .ddr_rst_n_in(ui_rst_n),
+        .eth_rst_n_in(eth_rst_n), .eth_clk_count_in(eth_clk_count));
+    wire [31:0] eth_clk_count;
+    clk_freq_meter u_eth_clk_meter (.ref_clk(per_clk), .meas_clk(eth_rx_clk), .count(eth_clk_count));
 
     wire [15:0] rm_addr;
     wire        rm_re;
