@@ -41,7 +41,7 @@
 - Status (2026-11-05, feature/ethernet, not merged): Ethernet on the board: link 1000 Mb/s, DHCP lease, ping 0.4 ms (vv_eth5; the earlier no-link was a bad
   cable). OPEN, unresolved: the serial console intermittently drops output chunks and sometimes stops for good (kernel keeps running: pings, SPI polling,
   Ethernet traffic seen on bus-activity LEDs); also stops Linux boot logs at "Waiting for root device". Seen on vv_sd (pre-Ethernet), vv_sd2, vv_eth5..8,
-  so not caused by the Ethernet work. Tried: irq_pulse repeat (b6b0bf7), uart_irq_hold (859e804): neither fixed it; vv_eth8 WNS -0.004. PLIC gateway
+  so not caused by the Ethernet work. Tried on branch experimental/uart-irq-hold (not merged): uart_irq_hold and an irq_pulse repeat; neither fixed it (vv_eth8 WNS -0.004). PLIC gateway
   ignores pulses during claim (verified in generated RTL). Suspect UART TX/status path (posted-write vs STAT read ordering across cc_per?) - untested.
   Debug aids: linux/dts/hg-xcku5p-sdroot-{netcon,mmcdbg}.dts, tools/netcon_listen.py; LED-probe patches were temporary (not committed).
 - (older) Next: when build/soc/vv_333b.log shows EXIT=0, `openFPGALoader --cable ft232 build/soc/vv_333b/soc.bit`, then

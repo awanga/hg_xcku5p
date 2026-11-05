@@ -1,6 +1,6 @@
 # 0003 — Ethernet PHY interface: GMII, RGMII optional
 
-- Status: accepted (direction); not validated on hardware
+- Status: accepted; GMII validated on hardware 2026-11-05 (docs/validation/ethernet-bringup.md)
 - Date: 2026-10-18
 
 ## Context
