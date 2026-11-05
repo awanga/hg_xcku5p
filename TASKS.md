@@ -38,12 +38,13 @@
 - Status (2026-10-30): Linux 6.18.59 + OpenSBI 1.9 + Buildroot boots to a login prompt on the board (validation/linux-bringup.md), now also cold from the SD
   card (ROM -> OpenSBI -> kernel, read-only ext4 root on p1, journalled noatime /data on p2, root home persists across reset; resets during the ROM
   read and during Linux boot recover). vv_sd2 misses timing by 0.065 ns (ran). Next: Ethernet (LiteEth GMII), L2 decision with a Linux workload, timing margin.
-- Status (2026-11-05, feature/ethernet, not merged): Ethernet on the board: link 1000 Mb/s, DHCP lease, ping 0.4 ms (vv_eth5; the earlier no-link was a bad
-  cable). OPEN, unresolved: the serial console intermittently drops output chunks and sometimes stops for good (kernel keeps running: pings, SPI polling,
-  Ethernet traffic seen on bus-activity LEDs); also stops Linux boot logs at "Waiting for root device". Seen on vv_sd (pre-Ethernet), vv_sd2, vv_eth5..8,
-  so not caused by the Ethernet work. Tried on branch experimental/uart-irq-hold (not merged): uart_irq_hold and an irq_pulse repeat; neither fixed it (vv_eth8 WNS -0.004). PLIC gateway
-  ignores pulses during claim (verified in generated RTL). Suspect UART TX/status path (posted-write vs STAT read ordering across cc_per?) - untested.
-  Debug aids: linux/dts/hg-xcku5p-sdroot-{netcon,mmcdbg}.dts, tools/netcon_listen.py; LED-probe patches were temporary (not committed).
+- Status (2026-11-05): Ethernet merged to develop (GMII 1000 Mb/s, DHCP, ping 0.4 ms on vv_eth5; docs/validation/ethernet-bringup.md). UART checked with
+  fw/app/uart_burst.c + tools/uart_burst_check.py (32-bit, byte and fenced polled TX: 60/60 lines intact; unchecked writes to a full 16-byte FIFO drop
+  data and the UART then stays full). The "garbled/dying console" seen earlier came from capturing with `cat`; capture with pyserial (raw) instead.
+  OPEN: intermittent SD detection hang at boot (rate varies with timing: 0-100%, also on pre-Ethernet vv_sd): the first CMD52 SPI transfer never
+  completes (clean log, vv_eth8 run 6), once with the SPI interrupt line high but unserved (vv_eth7dbg LEDs). PLIC gateway ignores a source while a claim
+  is outstanding (generated RTL). irq_pulse/uart_irq_hold experiments live on experimental/uart-irq-hold (did not fix it). Console loss under fast typed
+  input (RX burst) not yet isolated. Debug aids: linux/dts/hg-xcku5p-sdroot-{netcon,mmcdbg}.dts, tools/netcon_listen.py.
 - (older) Next: when build/soc/vv_333b.log shows EXIT=0, `openFPGALoader --cable ft232 build/soc/vv_333b/soc.bit`, then
   `tools/load.py fw/membench/build/membench_app.bin` to measure real L2-less latency vs the simulation model; then rerun L2 study on hardware;
   Linux-like workload; VexRiscv-SMP sim baseline.
