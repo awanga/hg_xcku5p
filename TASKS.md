@@ -52,11 +52,10 @@
 - Status (2026-11-06, timing margin): vv_sync1 limit is the CPU's own logic at 333 MHz (WNS +0.060, WHS +0.010): 60 of the worst paths are Fetch L1 tag/way
   compare to the way RAMs (7-10 logic levels), GShare/BTB RAM addresses, and the DDR4 IP's internal paths; nothing in our RTL glue. More margin needs a CPU
   config change (fewer ways, drop gshare: costs IPC) or a lower ui_clk (DDR4-2400 = 300 MHz); not done. Run-to-run spread across builds is about +-0.07 ns.
-- Status (2026-11-06, GMII IO): the RX input delays (+-0.5 ns "datasheet-memory") were wrong. Realtek datasheet GMII table (rev 1.5 search snippet, not the
-  full document): PHY RXD setup >= 2.5 ns, hold >= 0.5 ns to RXCLK; TXD needs setup 2.0 ns, hold 0 to GTX_CLK. With those, vv_sync1's RX_DV path fails by
+- Status (2026-11-06, GMII IO): the RX input delays (+-0.5 ns "datasheet-memory") were wrong. Realtek RTL8211E(G) datasheet Rev 1.6 Table 64 (now in docs/external, confirmed): PHY RXD setup >= 2.5 ns, hold >= 0.5 ns to RXCLK; TXD needs setup 2.0 ns, hold 0 to GTX_CLK. With those, vv_sync1's RX_DV path fails by
   -1.313 ns (5 ns of route to the preamble checker) though the link works on hardware (real PHY output is better than the guarantee). Fix in feature/gmii-io-timing:
-  input constraints 5.5/0.5, gmii_rx_reg stage on RXD/RX_DV/RX_ER; build/soc/vv_io1 running; needs board test. Open: get the datasheet PDF into docs/external to
-  confirm the numbers; trace-skew between RXCLK and RXD not modelled.
+  input constraints 5.5/0.5, gmii_rx_reg stage on RXD/RX_DV/RX_ER; build/soc/vv_io1 running; needs board test. Open: trace skew between RXCLK and RXD not modelled; RXCLK period spec is 7.5-8.5 ns
+  (constraint uses 8.0).
 - Status (2026-11-06, vendor package): analysed docs/external/vendor_docs (not committed); notes in docs/hardware/vendor-reference.md. Its pins agree with our schematic
   extract (DDR4 67/67, SD, LED, HDMI, PCIe, QSFP refclk); no Ethernet/FMC/flash example. Open: its DDR4 IP uses part MT40A512M16LY-075 (2 GiB) vs our MT40A256M16GE-075E
   (1 GiB): test real DDR4 capacity/aliasing on the board; reuse its flash-boot bitstream properties (SPIx4, 51 MHz, compress) for the flash-boot task; sensor part MS5607 vs MS5611.

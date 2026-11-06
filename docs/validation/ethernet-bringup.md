@@ -48,6 +48,14 @@ Profiling kernel (`KPROFILE=1 DTS_NAME=hg-xcku5p-sdroot-prof linux/build_sd.sh`,
   hanging at boot, serial input dying. Placement-dependent: identical source gave 0/16 hangs (vv_eth5) and 9/16 (vv_base2).
 - Fix: fpga/rtl/irq_sync.v (2-flop, ASYNC_REG). Board evidence, vv_sync1: 16/16 boots detect the card and reach login; typed-burst test 50/50.
 
+## GMII timing constraints (RTL8211EG datasheet Rev 1.6, section 10.6.4, Table 64)
+- PHY outputs (RxD/RxDV/RxER to RxCLK rising edge): setup >= 2.5 ns, hold >= 0.5 ns; RxCLK cycle 7.5 / 8 / 8.5 ns, high and low >= 2.5 ns, rise/fall <= 1 ns.
+- PHY inputs (TxD/TxEN to GTxCLK rising edge): setup >= 2 ns, hold >= 0 ns. GTxCLK is expected at 125 MHz.
+- Constraints (soc_board.xdc) now: input delay max 8 - 2.5 = 5.5 ns, min 0.5 ns; output delay max 2.0 ns, min 0 ns. Before, the RX values were +-0.5 ns
+  ("datasheet-memory"), which hid a violation: against the datasheet values vv_sync1's RX_DV path fails setup by -1.313 ns (5.1 ns of route from the pin to the
+  preamble checker) while hold and the TX side pass (hold +0.088 ns on TX). The link still worked on the board because real PHY output is better than the guarantee.
+- PHY reset: PHYRSTB low >= 10 ms (datasheet); soc_top holds ~21 ms. Not covered: trace skew between RXCLK and RXD (assumed length-matched).
+
 ## Not validated / open
-- GMII input/output delay constraints are datasheet-based (unverified); WNS of vv_eth5 is +0.003 ns.
+- GMII input/output delay constraints now follow the datasheet (above); the vv_io1 build with them and the RX register stage is not yet checked on the board.
 - Long-run stability untested. RX loss source unconfirmed. Possible fixes (not tried): more RX slots (only removes retransmits), offloading the buffer copy to a DMA master (none exists yet).
