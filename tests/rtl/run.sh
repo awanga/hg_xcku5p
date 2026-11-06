@@ -157,6 +157,18 @@ run_ip mut_ip_level "$b/mut_ip_level.v" FAIL
 sed 's/if (level \&\& !level_q) cnt/if (level) cnt/' "$ip_" >"$b/mut_ip_edge.v"
 cmp -s "$ip_" "$b/mut_ip_edge.v" && { echo "FAIL mutant ip_edge unchanged"; fail=1; }
 run_ip mut_ip_edge "$b/mut_ip_edge.v" FAIL
+# irq_sync
+isy=$here/fpga/rtl/irq_sync.v
+tbi=$here/tests/rtl/tb_irq_sync.v
+verilator --lint-only -Wall -Wno-DECLFILENAME "$isy" >"$b/lint_isy.log" 2>&1 && echo "PASS lint irq_sync" || {
+	echo "FAIL lint irq_sync"; head "$b/lint_isy.log"; fail=1; }
+run_ip irq_sync "$isy" PASS
+sed 's/s2 <= s1;/s2 <= d;/' "$isy" >"$b/mut_isy_one.v"
+cmp -s "$isy" "$b/mut_isy_one.v" && { echo "FAIL mutant isy_one unchanged"; fail=1; }
+run_ip mut_isy_one "$b/mut_isy_one.v" FAIL
+sed 's/s1 <= d;/s1 <= {d[0], d[W-1:1]};/' "$isy" >"$b/mut_isy_rot.v"
+cmp -s "$isy" "$b/mut_isy_rot.v" && { echo "FAIL mutant isy_rot unchanged"; fail=1; }
+run_ip mut_isy_rot "$b/mut_isy_rot.v" FAIL
 # eth_addr_map
 em=$here/fpga/rtl/eth_addr_map.v
 tbm=$here/tests/rtl/tb_eth_addr_map.v

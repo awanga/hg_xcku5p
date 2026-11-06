@@ -104,7 +104,10 @@ module soc_top #(
     wire        uart_irq;
     wire        spi_irq_level, spi_irq;
     wire        eth_irq;
-    wire [31:0] irq = {28'd0, eth_irq, spi_irq, uart_irq, 1'b0};
+    // The peripheral interrupts come from per_clk; synchronize them into the CPU clock before they reach the PLIC gateways.
+    wire [2:0]  irq_sync_q;
+    irq_sync #(.W(3)) u_irq_sync (.clk(cpu_clk), .d({eth_irq, spi_irq, uart_irq}), .q(irq_sync_q));
+    wire [31:0] irq = {28'd0, irq_sync_q, 1'b0};
 
 `ifdef WITH_DMA
     wire        dma_awready, dma_wready, dma_bvalid, dma_arready, dma_rvalid;
