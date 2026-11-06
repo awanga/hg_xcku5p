@@ -293,10 +293,22 @@ module soc_top #(
         .s_rdata(x_rdata[63:32]), .s_rresp(x_rresp[3:2]), .s_rvalid(x_rvalid[1]), .s_rready(x_rready[1]),
         .addr(rg_addr), .we(rg_we), .wdata(rg_wdata), .wstrb(rg_wstrb), .re(rg_re), .rdata(rg_rdata));
     soc_regs #(.CPU_KHZ(CPU_KHZ)) u_regs (
-        .clk(per_clk), .rst_n(per_rst_n), .we(rg_we), .addr(rg_addr[4:2]), .wdata(rg_wdata), .wstrb(rg_wstrb),
+        .clk(per_clk), .rst_n(per_rst_n), .we(rg_we), .addr(rg_addr[5:2]), .wdata(rg_wdata), .wstrb(rg_wstrb),
         .re(rg_re), .rdata(rg_rdata), .led(led), .key_in(key_rst), .ddr_calib_in(calib), .ddr_rst_n_in(ui_rst_n),
-        .eth_rst_n_in(eth_rst_n), .eth_clk_count_in(eth_clk_count));
+        .eth_rst_n_in(eth_rst_n), .eth_clk_count_in(eth_clk_count), .die_temp_in(die_temp));
     wire [31:0] eth_clk_count;
+
+    // FPGA die temperature: the SYSMON runs in its default mode (temperature and supplies converted continuously); drp_reader reads the
+    // temperature status register (address 0) about every 0.65 ms. The fan governor in the root filesystem converts the code.
+    wire        sm_den, sm_drdy;
+    wire [6:0]  sm_daddr;
+    wire [15:0] sm_do, die_temp;
+    drp_reader #(.ADDR(7'h00), .PERIOD_BITS(16)) u_die_temp (.clk(per_clk), .rst_n(per_rst_n), .den(sm_den), .daddr(sm_daddr),
+        .drdy(sm_drdy), .do_in(sm_do), .value(die_temp));
+    SYSMONE4 u_sysmon (
+        .DCLK(per_clk), .DEN(sm_den), .DADDR({1'b0, sm_daddr}), .DWE(1'b0), .DI(16'd0), .DO(sm_do), .DRDY(sm_drdy),
+        .RESET(1'b0), .CONVST(1'b0), .CONVSTCLK(1'b0), .VP(1'b0), .VN(1'b0), .VAUXP(16'd0), .VAUXN(16'd0),
+        .I2C_SCLK(1'b0), .I2C_SDA(1'b0));
     clk_freq_meter u_eth_clk_meter (.ref_clk(per_clk), .meas_clk(eth_rx_clk), .count(eth_clk_count));
 
     wire [15:0] rm_addr;

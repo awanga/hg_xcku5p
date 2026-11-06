@@ -8,6 +8,7 @@
 //   0x14 SCRATCH rw  32 bits
 //   0x18 ETH     ro  [0] PHY reset released (RSTB high)
 //   0x1C ETHCLK  ro  PHY RX clock edges per 2^15 clk cycles (clk_freq_meter): 125 MHz -> 40960 at a 100 MHz clk, 0 if absent
+//   0x20 DIETEMP ro  [15:0] SYSMON die temperature code (0 until the first read); degC = code * 509.3140064 / 65536 - 280.2308787
 // Inputs from other clock domains are double-registered here.
 module soc_regs #(
     parameter CPU_KHZ = 400000
@@ -15,7 +16,7 @@ module soc_regs #(
     input  wire        clk,
     input  wire        rst_n,
     input  wire        we,
-    input  wire [4:2]  addr,
+    input  wire [5:2]  addr,
     input  wire [31:0] wdata,
     input  wire [3:0]  wstrb,
     input  wire        re,
@@ -25,7 +26,8 @@ module soc_regs #(
     input  wire        ddr_calib_in,
     input  wire        ddr_rst_n_in,
     input  wire        eth_rst_n_in,
-    input  wire [31:0] eth_clk_count_in
+    input  wire [31:0] eth_clk_count_in,
+    input  wire [15:0] die_temp_in
 );
     reg [31:0] scratch;
     reg [31:0] tick;
@@ -44,8 +46,8 @@ module soc_regs #(
             led     <= 8'd0;
             scratch <= 32'd0;
         end else if (we) begin
-            if (addr == 3'd0 && wstrb[0]) led <= wdata[7:0];
-            if (addr == 3'd5) begin
+            if (addr == 4'd0 && wstrb[0]) led <= wdata[7:0];
+            if (addr == 4'd5) begin
                 if (wstrb[0]) scratch[7:0]   <= wdata[7:0];
                 if (wstrb[1]) scratch[15:8]  <= wdata[15:8];
                 if (wstrb[2]) scratch[23:16] <= wdata[23:16];
@@ -54,14 +56,15 @@ module soc_regs #(
         end
         if (re) begin
             case (addr)
-            3'd0: rdata <= {24'd0, led};
-            3'd1: rdata <= {31'd0, key_s[2]};
-            3'd2: rdata <= {30'd0, rst_s[2], calib_s[2]};
-            3'd3: rdata <= CPU_KHZ;
-            3'd4: rdata <= tick;
-            3'd5: rdata <= scratch;
-            3'd6: rdata <= {31'd0, ethrst_s[1]};
-            3'd7: rdata <= eth_clk_count_in;
+            4'd0: rdata <= {24'd0, led};
+            4'd1: rdata <= {31'd0, key_s[2]};
+            4'd2: rdata <= {30'd0, rst_s[2], calib_s[2]};
+            4'd3: rdata <= CPU_KHZ;
+            4'd4: rdata <= tick;
+            4'd5: rdata <= scratch;
+            4'd6: rdata <= {31'd0, ethrst_s[1]};
+            4'd7: rdata <= eth_clk_count_in;
+            4'd8: rdata <= {16'd0, die_temp_in};
             default: rdata <= 32'd0;
             endcase
         end

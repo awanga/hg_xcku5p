@@ -90,12 +90,15 @@ run_pe() { # name axil_simple.v soc_regs.v expect
 	grep -q "TBRESULT.* $4\$" "$b/$1.log" && echo "PASS $1 [icarus, expect $4]" || { echo "FAIL $1 [expected $4]"; grep -E 'TBRESULT|MISMATCH' "$b/$1.log" | head -3; fail=1; }
 }
 run_pe periph "$ai" "$sr" PASS
-sed 's/if (addr == 3.d0 \&\& wstrb\[0\]) led/if (addr == 3'"'"'d0) led/' "$sr" >"$b/mut_sr_strb.v"
+sed 's/if (addr == 4.d0 \&\& wstrb\[0\]) led/if (addr == 4'"'"'d0) led/' "$sr" >"$b/mut_sr_strb.v"
 cmp -s "$sr" "$b/mut_sr_strb.v" && { echo "FAIL mutant sr_strb unchanged"; fail=1; }
 run_pe mut_sr_strb "$ai" "$b/mut_sr_strb.v" FAIL
-sed 's/3.d2: rdata <= {30.d0, rst_s\[2\], calib_s\[2\]};/3'"'"'d2: rdata <= {30'"'"'d0, calib_s[2], rst_s[2]};/' "$sr" >"$b/mut_sr_status.v"
+sed 's/4.d2: rdata <= {30.d0, rst_s\[2\], calib_s\[2\]};/4'"'"'d2: rdata <= {30'"'"'d0, calib_s[2], rst_s[2]};/' "$sr" >"$b/mut_sr_status.v"
 cmp -s "$sr" "$b/mut_sr_status.v" && { echo "FAIL mutant sr_status unchanged"; fail=1; }
 run_pe mut_sr_status "$ai" "$b/mut_sr_status.v" FAIL
+sed 's/rdata <= {16.d0, die_temp_in};/rdata <= {die_temp_in, 16'"'"'d0};/' "$sr" >"$b/mut_sr_temp.v"
+cmp -s "$sr" "$b/mut_sr_temp.v" && { echo "FAIL mutant sr_temp unchanged"; fail=1; }
+run_pe mut_sr_temp "$ai" "$b/mut_sr_temp.v" FAIL
 sed 's/rdata_q  <= rdata;/rdata_q  <= 32'"'"'d0;/' "$ai" >"$b/mut_ai_rdata.v"
 cmp -s "$ai" "$b/mut_ai_rdata.v" && { echo "FAIL mutant ai_rdata unchanged"; fail=1; }
 run_pe mut_ai_rdata "$b/mut_ai_rdata.v" "$sr" FAIL
@@ -181,6 +184,21 @@ run_ip mut_grr_comb "$b/mut_grr_comb.v" FAIL
 sed 's/r <= d;/r <= {d[0], d[W-1:1]};/' "$grr" >"$b/mut_grr_rot.v"
 cmp -s "$grr" "$b/mut_grr_rot.v" && { echo "FAIL mutant grr_rot unchanged"; fail=1; }
 run_ip mut_grr_rot "$b/mut_grr_rot.v" FAIL
+# drp_reader
+drr=$here/fpga/rtl/drp_reader.v
+tbi=$here/tests/rtl/tb_drp_reader.v
+verilator --lint-only -Wall -Wno-DECLFILENAME "$drr" >"$b/lint_drr.log" 2>&1 && echo "PASS lint drp_reader" || {
+	echo "FAIL lint drp_reader"; head "$b/lint_drr.log"; fail=1; }
+run_ip drp_reader "$drr" PASS
+sed 's/end else if (&cnt) begin/end else if (cnt == 0) begin/' "$drr" >"$b/mut_drr_per.v"
+cmp -s "$drr" "$b/mut_drr_per.v" && { echo "FAIL mutant drr_per unchanged"; fail=1; }
+run_ip mut_drr_per "$b/mut_drr_per.v" FAIL
+sed 's/busy <= 1.b1;/busy <= 1'"'"'b0;/' "$drr" >"$b/mut_drr_flood.v"
+cmp -s "$drr" "$b/mut_drr_flood.v" && { echo "FAIL mutant drr_flood unchanged"; fail=1; }
+run_ip mut_drr_flood "$b/mut_drr_flood.v" FAIL
+sed 's/value <= do_in;/value <= 16'"'"'d0;/' "$drr" >"$b/mut_drr_val.v"
+cmp -s "$drr" "$b/mut_drr_val.v" && { echo "FAIL mutant drr_val unchanged"; fail=1; }
+run_ip mut_drr_val "$b/mut_drr_val.v" FAIL
 # eth_addr_map
 em=$here/fpga/rtl/eth_addr_map.v
 tbm=$here/tests/rtl/tb_eth_addr_map.v

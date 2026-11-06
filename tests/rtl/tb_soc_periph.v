@@ -30,9 +30,9 @@ module tb_soc_periph;
         .s_rdata(r_rdata), .s_rresp(), .s_rvalid(r_rvalid), .s_rready(r_rready),
         .addr(r_addr), .we(r_we), .wdata(r_wd), .wstrb(r_ws), .re(r_re), .rdata(r_rd));
     soc_regs #(.CPU_KHZ(400000)) u_regs (
-        .clk(clk), .rst_n(rst_n), .we(r_we), .addr(r_addr[4:2]), .wdata(r_wd), .wstrb(r_ws),
+        .clk(clk), .rst_n(rst_n), .we(r_we), .addr(r_addr[5:2]), .wdata(r_wd), .wstrb(r_ws),
         .re(r_re), .rdata(r_rd), .led(led), .key_in(key), .ddr_calib_in(calib), .ddr_rst_n_in(drst),
-        .eth_rst_n_in(ethrst), .eth_clk_count_in(32'hCAFE0123));
+        .eth_rst_n_in(ethrst), .eth_clk_count_in(32'hCAFE0123), .die_temp_in(16'hB5A3));
 
     // rom slave
     reg  [15:0] m_araddr;
@@ -139,6 +139,7 @@ module tb_soc_periph;
         ethrst = 1'b1; repeat (4) @(negedge clk);
         reg_read(16'h018, v); expect32(v, 32'h1, "ETH status, PHY reset released");
         reg_read(16'h01C, v); expect32(v, 32'hCAFE0123, "ETH clock count passthrough");
+        reg_read(16'h020, v); expect32(v, 32'h0000B5A3, "die temperature code passthrough, upper half zero");
         reg_read(16'h004, v); expect32(v, 32'h0, "KEY released");
         key = 1'b1; repeat (4) @(negedge clk);
         reg_read(16'h004, v); expect32(v, 32'h1, "KEY pressed");

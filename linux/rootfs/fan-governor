@@ -1,0 +1,85 @@
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+# Fan governor: sets the pwm-fan duty from the FPGA die temperature (SYSMON code in the board registers at 0xF8001020).
+#   below T_OFF the fan is stopped (it restarts at T_ON, a 5 C hysteresis); from T_ON it runs at MIN_DUTY and rises linearly to full
+#   speed at T_MAX; speed increases at once and decreases by at most STEP_DOWN per cycle.
+# Fail-safe: an unreadable or implausible reading, or the governor stopping, sets full speed. A SIGKILL cannot be trapped, so the fan
+# then stays at its last duty.
+# usage: fan-governor [-1]   (-1: one cycle, print "temp_mC duty", for debugging)   Settings may be overridden in /etc/default/fan-governor.
+T_OFF=${T_OFF:-40000}
+T_ON=${T_ON:-45000}
+T_MAX=${T_MAX:-70000}
+MIN_DUTY=${MIN_DUTY:-77}
+STEP_DOWN=${STEP_DOWN:-10}
+PERIOD=${PERIOD:-2}
+TEMP_REG=${TEMP_REG:-0xF8001020}
+
+# die_temp_mC <code>: SYSMONE4 transfer function, degC = code * 509.3140064 / 65536 - 280.2308787
+die_temp_mC() {
+	echo $(($1 * 509314 / 65536 - 280231))
+}
+
+# target_duty <temp_mC> <current duty>: the duty wanted at this temperature (before the ramp-down limit)
+target_duty() {
+	t=$1 cur=$2
+	if [ "$t" -ge "$T_MAX" ]; then
+		echo 255
+	elif [ "$t" -ge "$T_ON" ]; then
+		echo $((MIN_DUTY + (255 - MIN_DUTY) * (t - T_ON) / (T_MAX - T_ON)))
+	elif [ "$cur" -gt 0 ] && [ "$t" -ge "$T_OFF" ]; then
+		echo "$MIN_DUTY"
+	else
+		echo 0
+	fi
+}
+
+# next_duty <temp_mC> <current duty>: target with the ramp-down limit applied
+next_duty() {
+	want=$(target_duty "$1" "$2")
+	if [ "$want" -lt "$2" ]; then
+		floor=$(($2 - STEP_DOWN))
+		[ "$want" -lt "$floor" ] && want=$floor
+	fi
+	echo "$want"
+}
+
+find_pwm() {
+	for h in /sys/class/hwmon/hwmon*; do
+		[ "$(cat "$h/name" 2>/dev/null)" = pwmfan ] && { echo "$h/pwm1"; return 0; }
+	done
+	return 1
+}
+
+read_temp() {
+	code=$(devmem "$TEMP_REG" 32 2>/dev/null) || return 1
+	code=$((code))
+	# 0 = no reading yet, 0xFFFF = bus fault; below -40 C or above 125 C is outside the sensor's range
+	if [ "$code" -eq 0 ] || [ "$code" -ge 65535 ]; then return 1; fi
+	t=$(die_temp_mC "$code")
+	if [ "$t" -lt -40000 ] || [ "$t" -gt 125000 ]; then return 1; fi
+	echo "$t"
+}
+
+# FAN_GOV_LIB=1 with `.` loads only the functions (used by tests/rootfs/fan_governor_test.sh)
+if [ -n "${FAN_GOV_LIB:-}" ]; then return 0 2>/dev/null || exit 0; fi
+[ -r /etc/default/fan-governor ] && . /etc/default/fan-governor
+
+pwm=$(find_pwm) || { echo "fan-governor: no pwm-fan hwmon device" >&2; exit 1; }
+trap 'echo 255 >"$pwm"; exit 0' INT TERM EXIT
+echo 1 >"${pwm}_enable" 2>/dev/null
+duty=$(cat "$pwm")
+while :; do
+	if temp=$(read_temp); then
+		duty=$(next_duty "$temp" "$duty")
+	else
+		temp=-
+		duty=255
+	fi
+	echo "$duty" >"$pwm"
+	if [ "${1:-}" = "-1" ]; then
+		echo "$temp $duty"
+		trap - EXIT
+		exit 0
+	fi
+	sleep "$PERIOD"
+done

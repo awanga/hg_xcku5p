@@ -38,3 +38,19 @@ start)
 esac
 SCRIPT
 chmod 755 "$1/etc/init.d/S03data"
+
+# Fan governor (linux/rootfs/fan-governor): pwm-fan duty from the FPGA die temperature; started early so the fan does not sit at full
+# speed after boot. Stopping the service sets full speed (the governor's EXIT trap).
+install -D -m 755 "$(dirname "$0")/../rootfs/fan-governor" "$1/usr/sbin/fan-governor"
+cat >"$1/etc/init.d/S04fan" <<'SCRIPT'
+#!/bin/sh
+case "$1" in
+start)
+	start-stop-daemon -S -b -m -p /var/run/fan-governor.pid -x /usr/sbin/fan-governor
+	;;
+stop)
+	start-stop-daemon -K -p /var/run/fan-governor.pid
+	;;
+esac
+SCRIPT
+chmod 755 "$1/etc/init.d/S04fan"
