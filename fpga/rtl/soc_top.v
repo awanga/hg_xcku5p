@@ -333,6 +333,11 @@ module soc_top #(
     eth_addr_map u_eth_aw_map (.cpu_addr(x_awaddr[159:128]), .core_addr(eth_awaddr));
     eth_addr_map u_eth_ar_map (.cpu_addr(x_araddr[159:128]), .core_addr(eth_araddr));
 
+    // Receive inputs get one register stage in the PHY clock domain (see gmii_rx_reg.v).
+    wire [7:0] eth_rxd_q;
+    wire       eth_rx_dv_q, eth_rx_er_q;
+    gmii_rx_reg #(.W(10)) u_eth_rx_reg (.clk(eth_rx_clk), .d({eth_rx_er, eth_rx_dv, eth_rxd}), .q({eth_rx_er_q, eth_rx_dv_q, eth_rxd_q}));
+
     // LiteEth clocks its CSR/buffer side with per_clk; the eth_rx/eth_tx domains come from the PHY's RX clock inside the core.
     liteeth_core u_eth (
         .sys_clock(per_clk), .sys_reset(~per_rst_n),
@@ -344,6 +349,6 @@ module soc_top #(
         .interrupt(eth_irq),
         .gmii_clocks_rx(eth_rx_clk), .gmii_clocks_tx(eth_clk125), .gmii_clocks_gtx(eth_gtx_clk),
         .gmii_rst_n(core_eth_rst_n), .gmii_tx_data(eth_txd), .gmii_tx_en(eth_tx_en), .gmii_tx_er(eth_tx_er),
-        .gmii_rx_data(eth_rxd), .gmii_rx_dv(eth_rx_dv), .gmii_rx_er(eth_rx_er),
+        .gmii_rx_data(eth_rxd_q), .gmii_rx_dv(eth_rx_dv_q), .gmii_rx_er(eth_rx_er_q),
         .gmii_col(1'b0), .gmii_crs(1'b0), .gmii_int_n(1'b1), .gmii_mdc(), .gmii_mdio());
 endmodule

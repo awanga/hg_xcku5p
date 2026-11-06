@@ -169,6 +169,18 @@ run_ip mut_isy_one "$b/mut_isy_one.v" FAIL
 sed 's/s1 <= d;/s1 <= {d[0], d[W-1:1]};/' "$isy" >"$b/mut_isy_rot.v"
 cmp -s "$isy" "$b/mut_isy_rot.v" && { echo "FAIL mutant isy_rot unchanged"; fail=1; }
 run_ip mut_isy_rot "$b/mut_isy_rot.v" FAIL
+# gmii_rx_reg
+grr=$here/fpga/rtl/gmii_rx_reg.v
+tbi=$here/tests/rtl/tb_gmii_rx_reg.v
+verilator --lint-only -Wall -Wno-DECLFILENAME "$grr" >"$b/lint_grr.log" 2>&1 && echo "PASS lint gmii_rx_reg" || {
+	echo "FAIL lint gmii_rx_reg"; head "$b/lint_grr.log"; fail=1; }
+run_ip gmii_rx_reg "$grr" PASS
+sed 's/assign q = r;/assign q = d;/' "$grr" >"$b/mut_grr_comb.v"
+cmp -s "$grr" "$b/mut_grr_comb.v" && { echo "FAIL mutant grr_comb unchanged"; fail=1; }
+run_ip mut_grr_comb "$b/mut_grr_comb.v" FAIL
+sed 's/r <= d;/r <= {d[0], d[W-1:1]};/' "$grr" >"$b/mut_grr_rot.v"
+cmp -s "$grr" "$b/mut_grr_rot.v" && { echo "FAIL mutant grr_rot unchanged"; fail=1; }
+run_ip mut_grr_rot "$b/mut_grr_rot.v" FAIL
 # eth_addr_map
 em=$here/fpga/rtl/eth_addr_map.v
 tbm=$here/tests/rtl/tb_eth_addr_map.v

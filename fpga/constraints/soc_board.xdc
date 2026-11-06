@@ -56,11 +56,14 @@ set_property DRIVE 12 [get_ports {eth_gtx_clk eth_tx_en eth_tx_er eth_txd[*]}]
 # reduces the core's ODDR (constant inputs) to the buffered 125 MHz clock driving the GTX_CLK output buffer.
 create_clock -period 8.000 -name eth_rx_clk [get_ports eth_rx_clk]
 create_generated_clock -name eth_gtx_clk -source [get_pins u_mmcm/CLKOUT1] -divide_by 1 [get_ports eth_gtx_clk]
-# RTL8211EG GMII timing (datasheet-memory, not verified): TX data setup 2.0 ns / hold 0 ns to GTX_CLK; RX data valid within +-0.5 ns of RX_CLK.
+# RTL8211EG GMII timing, from the Realtek datasheet GMII table as found in a search snippet (rev 1.5, Table 58; not the full document, confirm
+# against the owner's copy): the PHY drives RXD/RX_DV/RX_ER with >= 2.5 ns setup and >= 0.5 ns hold around RXCLK (period 8 ns), so the data
+# window at the pins is [0.5, 8 - 2.5] ns after the launching edge; the PHY needs TXD/TX_EN/TX_ER >= 2.0 ns setup and >= 0 ns hold to GTX_CLK.
+# Board trace skew between clock and data is not included (traces assumed length-matched).
 set_output_delay -clock eth_gtx_clk -max 2.000 [get_ports {eth_tx_en eth_tx_er eth_txd[*]}]
 set_output_delay -clock eth_gtx_clk -min 0.000 [get_ports {eth_tx_en eth_tx_er eth_txd[*]}]
-set_input_delay -clock eth_rx_clk -max 0.500 [get_ports {eth_rx_dv eth_rx_er eth_rxd[*]}]
-set_input_delay -clock eth_rx_clk -min -0.500 [get_ports {eth_rx_dv eth_rx_er eth_rxd[*]}]
+set_input_delay -clock eth_rx_clk -max 5.500 [get_ports {eth_rx_dv eth_rx_er eth_rxd[*]}]
+set_input_delay -clock eth_rx_clk -min 0.500 [get_ports {eth_rx_dv eth_rx_er eth_rxd[*]}]
 set_false_path -to [get_ports eth_rst_n]
 # The MAC's per_clk side and the PHY clock domain only exchange data through LiteEth's own CDC FIFOs/event logic. Do not put ui_clk
 # in a group with per_clk: a clock group is a false path and would override the set_max_delay/set_bus_skew of the cc_per clock converter.
