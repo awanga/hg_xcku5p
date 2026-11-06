@@ -57,5 +57,5 @@ Profiling kernel (`KPROFILE=1 DTS_NAME=hg-xcku5p-sdroot-prof linux/build_sd.sh`,
 - PHY reset: PHYRSTB low >= 10 ms (datasheet); soc_top holds ~21 ms. Not covered: trace skew between RXCLK and RXD (assumed length-matched).
 
 ## Not validated / open
-- GMII input/output delay constraints now follow the datasheet (above); the vv_io1 build with them and the RX register stage is not yet checked on the board.
+- GMII input/output delay constraints now follow the datasheet (above); with the RX register stage the RX domain meets them (setup +0.43 ns, hold +0.03 ns in vv_io2q); on the board vv_io2q gives 1000 Mb/s link, DHCP, ping 0.5-3.6 ms, 0 CRC/preamble errors and unchanged throughput.
 - Long-run stability untested. RX loss source unconfirmed. Possible fixes (not tried): more RX slots (only removes retransmits), offloading the buffer copy to a DMA master (none exists yet).
