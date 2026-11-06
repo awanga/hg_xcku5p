@@ -10,11 +10,16 @@ Bitstream build/soc/vv_eth5 (source f8d2f4f), SD-booted Linux 6.18.59, router wi
   | Direction | Throughput | Retransmits | CPU |
   | board to host (TX) | 70 Mb/s (two runs: 70.6, 69.8) | 0 | sys 94 %, idle 0 % |
   | host to board (RX, -R) | 43.5 Mb/s (two runs: 43.7, 43.5) | ~3100 | sys 21 %, softirq 67 %, idle 12 % |
-  `ethtool -S` is not implemented by the driver; /proc/net/dev shows no rx/tx errors or drops, so the RX retransmits are loss the driver cannot see
-  (LiteEth has 2 RX slots of 2 KiB; a frame arriving while both are held is dropped in hardware). Not yet confirmed as the cause.
+  The MAC's own drop counter (`ethmac_sram_writer_errors`, CPU address 0xF8009008) rose by ~4050-4270 per 10 s RX run, equal to the TCP retransmits;
+  CRC and preamble error counters (0xF8009040, 0xF800903C) stayed 0. So the loss is both RX slots (2 x 2 KiB) being full when a frame arrives:
+  the CPU takes ~285 us per received packet and a 1 Gb/s sender delivers one every 12 us. /proc/net/dev and `ethtool -S` do not show it.
+  Capping the sender (`-b 40M/55M/70M`) changed nothing (39-40 Mb/s, same drops): iperf3's `-b` does not pace TCP here. A paced sender was not tested.
+  UDP receive at 30 Mb/s (1400 B datagrams) lost 0 of 21434 datagrams.
 - Cause of the low rate: packet data is copied by the CPU through the buffer window with `memcpy_fromio/toio`. A 32-bit access to that window takes
   ~190 ns (read 193, write 184; user-space mmap of /dev/mem, 500 x 2 KiB), 20-22 MB/s at best, against 11 ns for DDR. A 1500-byte frame costs ~70 us
-  of CPU for the copy alone. The path is bound by MMIO latency (333 MHz CPU, clock converters, 100 MHz AXI-Lite peripheral bus), not DDR or cache.
+  of CPU for the copy alone (memcpy_fromio already uses 64-bit accesses; a 64-bit read costs 346 ns, a byte read 194 ns, so wider accesses do not help).
+  The copy is only ~25 % of the RX per-packet cost (~285 us) and ~40 % of TX (~171 us); the rest is the network stack: TCP loopback on the board
+  reaches 660 Mb/s with large segments, but UDP loopback with 1400 B datagrams only 43.8 Mb/s (~3.9k packets/s, both ends on one CPU).
 - /proc/interrupts: uartlite, spi and eth0 all count.
 - An earlier no-link period was a bad cable (RJ45 LEDs stayed dark; a known-good cable fixed it); not an RTL fault.
 
@@ -34,4 +39,4 @@ Bitstream build/soc/vv_eth5 (source f8d2f4f), SD-booted Linux 6.18.59, router wi
 
 ## Not validated / open
 - GMII input/output delay constraints are datasheet-based (unverified); WNS of vv_eth5 is +0.003 ns.
-- Long-run stability untested. RX loss source unconfirmed. Possible fixes (not tried): 64-bit buffer accesses, more RX slots, DMA through the coherent port.
+- Long-run stability untested. RX loss source unconfirmed. Possible fixes (not tried): more RX slots (only removes retransmits), offloading the buffer copy to a DMA master (none exists yet).
