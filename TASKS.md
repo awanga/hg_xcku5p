@@ -140,7 +140,7 @@
   - Acceptance: defined stress duration/patterns pass; bandwidth and clock configuration are recorded.
 - [ ] SD read/write and filesystem tests.
   - Acceptance: repeatable `fio` or equivalent tests pass without filesystem or I/O errors.
-- [ ] Ethernet link, DHCP/static configuration, ping, and throughput tests.
+- [-] Ethernet link, DHCP/static configuration, ping, and throughput tests. (2026-11-06: link 1000 Mb/s, DHCP, ping, RX 3.05 MB/s over 3x40 MB wget with exact byte counts, vv_eth5; TX throughput, CPU load and error counters not yet measured - needs iperf3 in the rootfs)
   - Acceptance: link negotiation is stable; throughput baseline, CPU load, and error counters are recorded.
 - [ ] GPIO, LEDs, switches, and keys.
   - Acceptance: all confirmed pins behave with documented polarity/debounce; automated smoke test returns pass/fail.

@@ -3,7 +3,10 @@
 Bitstream build/soc/vv_eth5 (source f8d2f4f), SD-booted Linux 6.18.59, router with DHCP. Physical-board evidence.
 
 ## Result
-- Link 1000 Mb/s, DHCP lease obtained at boot, ping 0.35-0.45 ms. Throughput not yet measured.
+- Link 1000 Mb/s, DHCP lease obtained at boot, ping 0.35-0.45 ms.
+- Receive throughput (2026-11-06): busybox `wget` of a 40 MB file from a host Python http.server, three runs, each exactly 40000000 bytes in 13.1 s =
+  3.05 MB/s (24 Mb/s). Likely CPU/bus bound (333 MHz in-order core, packet buffers behind the 100 MHz AXI-Lite peripheral path); not profiled.
+- Transmit throughput not measured: busybox has no nc/iperf, and `wget --post-file` hung against the test server. Add iperf3 to the rootfs.
 - /proc/interrupts: uartlite, spi and eth0 all count.
 - An earlier no-link period was a bad cable (RJ45 LEDs stayed dark; a known-good cable fixed it); not an RTL fault.
 
@@ -18,4 +21,4 @@ Bitstream build/soc/vv_eth5 (source f8d2f4f), SD-booted Linux 6.18.59, router wi
 ## Not validated / open
 - GMII input/output delay constraints are datasheet-based (unverified); WNS of vv_eth5 is +0.003 ns.
 - Serial console intermittently drops or stops output on several bitstreams, including pre-Ethernet ones (TASKS.md Open).
-- Sustained throughput and long-run stability untested.
+- Transmit throughput, CPU load, error counters and long-run stability untested.
