@@ -69,9 +69,9 @@ Net names in the PDF netlist have `_` replaced by `0`; the CSV is decoded agains
 - PL_I2C: SCL AB14, SDA W16, 2.2K pull-ups, BL24C02 (U4). **S-text/S-image**
 - Second bus "SCL/SDA" (A9/B9, bank 86, 4.7K pull-ups): two BL24C256 (U25, U16). Address straps not read. **S-image, verify**
 - FMC_SCL/FMC_SDA (K9/K10): FMC connector EEPROM bus. **S-image, verify**
-- MS5611-01BA03 (U8), **owner-confirmed pinout 2026-10-18**: wired as **SPI** (PS=GND), 3.3 V (bank 86), 100R series.
+- U8 is labelled MS5611-01BA03 in the schematic but behaves as an **MS5607** (board test 2026-11-06: MS5607 compensation gives 99.9 kPa, MS5611 gives half; vendor tutorial says MS5607). **owner-confirmed pinout 2026-10-18**: wired as **SPI** (PS=GND), 3.3 V (bank 86), 100R series.
   CSB B10 (active low), SCLK B11, SDI (MOSI) C11, SDO (MISO) A10. Not I2C; no interrupt line. Upstream Linux driver:
-  IIO `ms5611` SPI (`meas,ms5611`, SPI mode 0/3, <= 20 MHz per datasheet-memory); needs an AXI SPI controller + chip select. **S-text/S-image**
+  IIO `ms5611` SPI (`meas,ms5607` on this board, SPI mode 0/3, <= 20 MHz per datasheet-memory); needs an AXI SPI controller + chip select. **S-text/S-image**
 - Temperature sensor is a **DS18B20** (1-Wire, W13, 4.7K pull-up; also header J11). Owner's "DS18820" is a typo. **S-text**
 - Buzzer: BEEP W12 (NMOS Q1 drive, active high). Fan: PWM E15, FB G17.
 - LEDs LED0-7 (**owner-confirmed**): E16, E17, F15, D15, B16, D18, G15, E22. Each drives the gate of an SI2300 NMOS

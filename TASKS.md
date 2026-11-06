@@ -47,7 +47,7 @@
   window (memcpy_fromio), not DDR/cache. L2: no change; gzip baseline 13 s/3 MB recorded in l2-study.md; an L2 Linux image would be needed to measure it.
   RX loss = MAC drop counter (both 2 KiB slots full; CPU ~285 us/packet). Profile: ~30 % in the Ethernet IRQ handler (copy), ~55 % spread over the stack, no hotspot;
   more slots not worth it (pow2 limit: 4 max). DMA copy engine deferred to the PCIe/FMC work (needs the coherent hub; ceiling +15-25 Mb/s RX).
-  Next: merge-ready bitstream is build/soc/vv_io2q (timing met, RX constraints per datasheet); SD data-in (sd_dat0) is an unsynchronized async input (report_cdc), harmless at present. Experiments irq_blank (SPI level
+  Next: merge-ready bitstream is build/soc/vv_per1 (vv_io2q plus the small peripherals); SD data-in (sd_dat0) is an unsynchronized async input (report_cdc), harmless at present. Experiments irq_blank (SPI level
   with blanking) and uart_irq_hold were superseded and deleted.
 - Status (2026-11-06, timing margin): vv_sync1 limit is the CPU's own logic at 333 MHz (WNS +0.060, WHS +0.010): 60 of the worst paths are Fetch L1 tag/way
   compare to the way RAMs (7-10 logic levels), GShare/BTB RAM addresses, and the DDR4 IP's internal paths; nothing in our RTL glue. More margin needs a CPU
@@ -64,6 +64,9 @@
   (1 GiB): test real DDR4 capacity/aliasing on the board; reuse its flash-boot bitstream properties (SPIx4, 51 MHz, compress) for the flash-boot task; sensor part MS5607 vs MS5611.
 - Status (2026-11-06, DDR4 capacity): fw/app/ddr_full.c on vv_io2q: address lines + two full 992 MiB sweeps, 0 errors (before: 64 MiB). Window is 1 GiB so >1 GiB is
   untestable with this config; whether the parts are 4 Gb (ours) or 8 Gb (vendor IP) stays open: read the DRAM package marking, or build an 8 Gb config and test aliasing.
+- Status (2026-11-06, small peripherals): AXI GPIO + AXI Timer (PWM) + a second SPI master added; vv_per1 (WNS +0.003, WHS +0.010): DS18B20 via w1-gpio (30/30),
+  MS5607 barometer via IIO (99.9 kPa; the part is an MS5607, not MS5611), fan via pwm-fan + tach (0..6000 rpm), buzzer driver registered (sound not confirmed), 16/16 boots,
+  Ethernet unchanged. See docs/validation/small-peripherals.md. Next: user to confirm the buzzer sound; then flash boot (vendor bitstream properties in vendor-reference.md).
 - (older) Next: when build/soc/vv_333b.log shows EXIT=0, `openFPGALoader --cable ft232 build/soc/vv_333b/soc.bit`, then
   `tools/load.py fw/membench/build/membench_app.bin` to measure real L2-less latency vs the simulation model; then rerun L2 study on hardware;
   Linux-like workload; VexRiscv-SMP sim baseline.

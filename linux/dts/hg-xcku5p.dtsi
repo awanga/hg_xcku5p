@@ -115,7 +115,7 @@
 			};
 		};
 
-		/* MS5611 barometer on its own SiFive-compatible SPI master (SPI mode 0, <= 20 MHz per the datasheet) */
+		/* MS5607 barometer on its own SiFive-compatible SPI master (SPI mode 0, <= 20 MHz per the datasheet) */
 		spi1: spi@f8005000 {
 			compatible = "sifive,spi0";
 			reg = <0xf8005000 0x1000>;
@@ -128,7 +128,7 @@
 			sifive,max-bits-per-word = <8>;
 
 			barometer@0 {
-				compatible = "meas,ms5611";
+				compatible = "meas,ms5607";
 				reg = <0>;
 				spi-max-frequency = <10000000>;
 			};

@@ -45,7 +45,7 @@ There is no Ethernet, FMC or user-flash example: the GMII constraints and PHY be
   `BITSTREAM.CONFIG.UNUSEDPIN Pullup`. Our `build_soc.tcl` sets none of them (we configure over JTAG). The flash is 256 Mb: confirm 4-byte addressing and
   `CFGBVS`/`CONFIG_VOLTAGE` when the flash-boot task is done.
 - MS5607-02BA and MS5611 share the driver sequence: reset 0x1E, wait 2.8 ms, read PROM 0xA0-0xAE (8 words, CRC-4), convert, read ADC. SPI mode 0 or 3, up to 20 MHz.
-  The vendor tutorial says MS5607; the owner and schematic say MS5611-01BA03; Linux IIO `ms5611` handles both compatibles, so confirm the marking on the part.
+  The vendor tutorial says MS5607; the owner and schematic say MS5611-01BA03; Linux IIO `ms5611` handles both compatibles, and the board test confirmed an MS5607 (docs/validation/small-peripherals.md).
 - Vendor drivers are written for a 50 MHz clock and a polling FPGA state machine (UART-to-AXI-Lite bridge, 1-Wire, PWM); in our SoC these become Linux drivers
   (`w1-gpio` or a bit-banged AXI GPIO for DS18B20, `pwm-fan`/`pwm-beeper`, IIO `ms5611`). They need AXI GPIO/PWM/SPI IP or small RTL blocks; none exists yet.
 

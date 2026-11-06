@@ -5,7 +5,7 @@ Status 2026-10-29. Evidence levels are stated per row: simulation, synthesis/imp
 ## Design
 - `fpga/rtl/soc_top.v`: generated SoC netlist (`fpga/scripts/cpu/gen_soc.sh`, VexiiRiscv `SocGen`: CPU, TileLink fabric, AXI4 memory master 256-bit, AXI-Lite 32-bit peripheral master, CLINT/PLIC inside).
 - CPU clock from CLK_50M via MMCM (1200 MHz VCO / `CPU_DIV`; 400 MHz at 3). Peripheral clock 100 MHz. DDR4 `ui_clk` from the AMD controller (200 MHz at tCK 1250 ps). All three are asynchronous; AMD `axi_clock_converter` on the memory (AXI4, 256-bit, 8-bit ID) and peripheral (AXI-Lite) paths.
-- Peripherals behind `axi_crossbar`: UART lite 0xF8000000, board registers 0xF8001000 (`soc_regs.v`), boot ROM 0x10000000 (16 KiB). DDR4 at 0x40000000 (1 GiB). Reset vector 0x10000000.
+- Peripherals behind `axi_crossbar`: UART lite 0xF8000000, board registers 0xF8001000 (`soc_regs.v`), boot ROM 0x10000000 (16 KiB), SPI (SD) 0xF8002000, AXI GPIO 0xF8003000, AXI Timer/PWM 0xF8004000, SPI (MS5607) 0xF8005000, LiteEth window 0xF8008000. DDR4 at 0x40000000 (1 GiB). Reset vector 0x10000000.
 - Firmware `fw/boot` (RV64IMA, runs from ROM, stack/bss in DDR4): banner, CPU kHz, DDR4 status, 16 MiB data pattern + address tests, throughput.
 - `ui_clk`/CPU clock ratio: the CPU runs at twice the controller user clock at DDR4-1600.
 
