@@ -39,6 +39,15 @@ module soc_top #(
     output wire        sd_cmd,   // SPI MOSI
     input  wire        sd_dat0,  // SPI MISO
     output wire        sd_dat3,  // SPI chip select (active low)
+    // Small peripherals: MS5611 barometer on its own SPI port (bank 86, 3.3 V), DS18B20 1-Wire (bank 86), buzzer, 4-wire fan (bank 67, VADJ 1.8 V)
+    output wire        ms_sclk,
+    output wire        ms_mosi,
+    input  wire        ms_miso,
+    output wire        ms_cs_n,
+    inout  wire        ds18b20_io,
+    output wire        beep,
+    output wire        fan_pwm,
+    input  wire        fan_fb,
     // RTL8211EG in GMII mode (bank 87, 3.3 V). MDC/MDIO/INT/COL/CRS have no FPGA pin.
     input  wire        eth_rx_clk,
     output wire        eth_gtx_clk,
@@ -105,9 +114,11 @@ module soc_top #(
     wire        spi_irq_level, spi_irq;
     wire        eth_irq;
     // The peripheral interrupts come from per_clk; synchronize them into the CPU clock before they reach the PLIC gateways.
-    wire [2:0]  irq_sync_q;
-    irq_sync #(.W(3)) u_irq_sync (.clk(cpu_clk), .d({eth_irq, spi_irq, uart_irq}), .q(irq_sync_q));
-    wire [31:0] irq = {28'd0, irq_sync_q, 1'b0};
+    // PLIC sources: 1 UART lite, 2 SPI (SD), 3 LiteEth, 4 SPI (MS5611), 5 GPIO.
+    wire        spi1_irq_level, spi1_irq, gpio_irq;
+    wire [4:0]  irq_sync_q;
+    irq_sync #(.W(5)) u_irq_sync (.clk(cpu_clk), .d({gpio_irq, spi1_irq, eth_irq, spi_irq, uart_irq}), .q(irq_sync_q));
+    wire [31:0] irq = {26'd0, irq_sync_q, 1'b0};
 
 `ifdef WITH_DMA
     wire        dma_awready, dma_wready, dma_bvalid, dma_arready, dma_rvalid;
@@ -238,13 +249,14 @@ module soc_top #(
         .m_axi_araddr(q_araddr), .m_axi_arprot(q_arprot), .m_axi_arvalid(q_arvalid), .m_axi_arready(q_arready),
         .m_axi_rdata(q_rdata), .m_axi_rresp(q_rresp), .m_axi_rvalid(q_rvalid), .m_axi_rready(q_rready));
 
-    // crossbar masters: 0 UART lite, 1 board regs, 2 boot ROM, 3 SPI (SD card), 4 LiteEth (window 0xF8008000, 32 KiB, remapped below)
-    wire [159:0] x_awaddr, x_araddr, x_wdata, x_rdata;
-    wire [14:0] x_awprot, x_arprot;
-    wire [19:0] x_wstrb;
-    wire [9:0]  x_bresp, x_rresp;
-    wire [4:0]  x_awvalid, x_awready, x_wvalid, x_wready, x_bvalid, x_bready;
-    wire [4:0]  x_arvalid, x_arready, x_rvalid, x_rready;
+    // crossbar masters: 0 UART lite, 1 board regs, 2 boot ROM, 3 SPI (SD card), 4 LiteEth (window 0xF8008000, 32 KiB, remapped below),
+    // 5 AXI GPIO 0xF8003000, 6 AXI Timer (PWM) 0xF8004000, 7 SPI (MS5611) 0xF8005000
+    wire [255:0] x_awaddr, x_araddr, x_wdata, x_rdata;
+    wire [23:0] x_awprot, x_arprot;
+    wire [31:0] x_wstrb;
+    wire [15:0] x_bresp, x_rresp;
+    wire [7:0]  x_awvalid, x_awready, x_wvalid, x_wready, x_bvalid, x_bready;
+    wire [7:0]  x_arvalid, x_arready, x_rvalid, x_rready;
 
     xbar_per u_xbar (
         .aclk(per_clk), .aresetn(per_rst_n),
@@ -317,6 +329,53 @@ module soc_top #(
     spi_sifive u_spi (
         .clk(per_clk), .rst_n(per_rst_n), .we(sp_we), .addr(sp_addr[6:0]), .wdata(sp_wdata), .re(sp_re), .rdata(sp_rdata),
         .irq(spi_irq_level), .sck(sd_clk), .mosi(sd_cmd), .miso(sd_dat0), .cs_n(sd_dat3));
+
+    // ---------------------------------------------------------------- small peripherals
+    // GPIO bits: 0 DS18B20 data (open drain: the board has a 4.7 k pull-up), 1 buzzer (active high), 2 fan tach input.
+    wire [2:0] gpio_i, gpio_o, gpio_t;
+    gpio_0 u_gpio (
+        .s_axi_aclk(per_clk), .s_axi_aresetn(per_rst_n),
+        .s_axi_awaddr(x_awaddr[168:160]), .s_axi_awvalid(x_awvalid[5]), .s_axi_awready(x_awready[5]),
+        .s_axi_wdata(x_wdata[191:160]), .s_axi_wstrb(x_wstrb[23:20]), .s_axi_wvalid(x_wvalid[5]), .s_axi_wready(x_wready[5]),
+        .s_axi_bresp(x_bresp[11:10]), .s_axi_bvalid(x_bvalid[5]), .s_axi_bready(x_bready[5]),
+        .s_axi_araddr(x_araddr[168:160]), .s_axi_arvalid(x_arvalid[5]), .s_axi_arready(x_arready[5]),
+        .s_axi_rdata(x_rdata[191:160]), .s_axi_rresp(x_rresp[11:10]), .s_axi_rvalid(x_rvalid[5]), .s_axi_rready(x_rready[5]),
+        .ip2intc_irpt(gpio_irq), .gpio_io_i(gpio_i), .gpio_io_o(gpio_o), .gpio_io_t(gpio_t));
+    IOBUF u_ds18b20_iobuf (.I(gpio_o[0]), .T(gpio_t[0]), .O(gpio_i[0]), .IO(ds18b20_io));
+    assign beep = gpio_o[1] & ~gpio_t[1];
+    assign gpio_i[1] = beep;
+    assign gpio_i[2] = fan_fb;
+
+    // The fan's PWM wire is pulled up inside the fan and the board inverts it with an NMOS (Q9): a high pin pulls the fan's PWM line low.
+    // pwm-xilinx cannot invert, so the pin is the inverse of the timer's PWM output: line duty = timer duty (0 = fan at its minimum).
+    wire tmr_generateout0, tmr_generateout1, tmr_irq, tmr_pwm0;
+    assign fan_pwm = ~tmr_pwm0;
+    tmr_0 u_timer (
+        .s_axi_aclk(per_clk), .s_axi_aresetn(per_rst_n),
+        .s_axi_awaddr(x_awaddr[196:192]), .s_axi_awvalid(x_awvalid[6]), .s_axi_awready(x_awready[6]),
+        .s_axi_wdata(x_wdata[223:192]), .s_axi_wstrb(x_wstrb[27:24]), .s_axi_wvalid(x_wvalid[6]), .s_axi_wready(x_wready[6]),
+        .s_axi_bresp(x_bresp[13:12]), .s_axi_bvalid(x_bvalid[6]), .s_axi_bready(x_bready[6]),
+        .s_axi_araddr(x_araddr[196:192]), .s_axi_arvalid(x_arvalid[6]), .s_axi_arready(x_arready[6]),
+        .s_axi_rdata(x_rdata[223:192]), .s_axi_rresp(x_rresp[13:12]), .s_axi_rvalid(x_rvalid[6]), .s_axi_rready(x_rready[6]),
+        .capturetrig0(1'b0), .capturetrig1(1'b0), .freeze(1'b0),
+        .generateout0(tmr_generateout0), .generateout1(tmr_generateout1), .pwm0(tmr_pwm0), .interrupt(tmr_irq));
+
+    wire [11:0] sp1_addr;
+    wire        sp1_we, sp1_re;
+    wire [31:0] sp1_wdata, sp1_rdata;
+    wire [3:0]  sp1_wstrb;
+    axil_simple #(.AW(12)) u_if_spi1 (
+        .clk(per_clk), .rst_n(per_rst_n),
+        .s_awaddr(x_awaddr[235:224]), .s_awvalid(x_awvalid[7]), .s_awready(x_awready[7]),
+        .s_wdata(x_wdata[255:224]), .s_wstrb(x_wstrb[31:28]), .s_wvalid(x_wvalid[7]), .s_wready(x_wready[7]),
+        .s_bresp(x_bresp[15:14]), .s_bvalid(x_bvalid[7]), .s_bready(x_bready[7]),
+        .s_araddr(x_araddr[235:224]), .s_arvalid(x_arvalid[7]), .s_arready(x_arready[7]),
+        .s_rdata(x_rdata[255:224]), .s_rresp(x_rresp[15:14]), .s_rvalid(x_rvalid[7]), .s_rready(x_rready[7]),
+        .addr(sp1_addr), .we(sp1_we), .wdata(sp1_wdata), .wstrb(sp1_wstrb), .re(sp1_re), .rdata(sp1_rdata));
+    irq_pulse u_spi1_irq_pulse (.clk(per_clk), .rst_n(per_rst_n), .level(spi1_irq_level), .pulse(spi1_irq));
+    spi_sifive u_spi1 (
+        .clk(per_clk), .rst_n(per_rst_n), .we(sp1_we), .addr(sp1_addr[6:0]), .wdata(sp1_wdata), .re(sp1_re), .rdata(sp1_rdata),
+        .irq(spi1_irq_level), .sck(ms_sclk), .mosi(ms_mosi), .miso(ms_miso), .cs_n(ms_cs_n));
 
     // The core's own PHY reset is only 256 cycles; PHYs want RSTB low for milliseconds, so hold it ~21 ms (2^21 per_clk cycles)
     // after per_clk is up and AND it with the core's reset.

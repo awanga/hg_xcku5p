@@ -31,14 +31,22 @@ set_property -dict [list \
 create_ip -name axi_clock_converter -vendor xilinx.com -library ip -module_name cc_per
 set_property -dict [list CONFIG.PROTOCOL AXI4LITE CONFIG.DATA_WIDTH 32 CONFIG.ADDR_WIDTH 32 CONFIG.ACLK_ASYNC 1] [get_ips cc_per]
 create_ip -name axi_crossbar -vendor xilinx.com -library ip -module_name xbar_per
-set_property -dict [list CONFIG.PROTOCOL AXI4LITE CONFIG.NUM_SI 1 CONFIG.NUM_MI 5 CONFIG.ADDR_WIDTH 32 CONFIG.DATA_WIDTH 32 \
+set_property -dict [list CONFIG.PROTOCOL AXI4LITE CONFIG.NUM_SI 1 CONFIG.NUM_MI 8 CONFIG.ADDR_WIDTH 32 CONFIG.DATA_WIDTH 32 \
     CONFIG.M00_A00_BASE_ADDR 0x00000000F8000000 CONFIG.M00_A00_ADDR_WIDTH 12 \
     CONFIG.M01_A00_BASE_ADDR 0x00000000F8001000 CONFIG.M01_A00_ADDR_WIDTH 12 \
     CONFIG.M02_A00_BASE_ADDR 0x0000000010000000 CONFIG.M02_A00_ADDR_WIDTH 16 \
     CONFIG.M03_A00_BASE_ADDR 0x00000000F8002000 CONFIG.M03_A00_ADDR_WIDTH 12 \
-    CONFIG.M04_A00_BASE_ADDR 0x00000000F8008000 CONFIG.M04_A00_ADDR_WIDTH 15] [get_ips xbar_per]
+    CONFIG.M04_A00_BASE_ADDR 0x00000000F8008000 CONFIG.M04_A00_ADDR_WIDTH 15 \
+    CONFIG.M05_A00_BASE_ADDR 0x00000000F8003000 CONFIG.M05_A00_ADDR_WIDTH 12 \
+    CONFIG.M06_A00_BASE_ADDR 0x00000000F8004000 CONFIG.M06_A00_ADDR_WIDTH 12 \
+    CONFIG.M07_A00_BASE_ADDR 0x00000000F8005000 CONFIG.M07_A00_ADDR_WIDTH 12] [get_ips xbar_per]
 create_ip -name axi_uartlite -vendor xilinx.com -library ip -module_name uart_0
 set_property -dict [list CONFIG.C_BAUDRATE 230400 CONFIG.C_S_AXI_ACLK_FREQ_HZ 100000000] [get_ips uart_0]
+# AXI GPIO (DS18B20 1-Wire, buzzer, fan tach) and AXI Timer (fan PWM): both have upstream Linux drivers (gpio-xilinx, pwm-xilinx).
+create_ip -name axi_gpio -vendor xilinx.com -library ip -module_name gpio_0
+set_property -dict [list CONFIG.C_GPIO_WIDTH 3 CONFIG.C_ALL_INPUTS 0 CONFIG.C_ALL_OUTPUTS 0 CONFIG.C_INTERRUPT_PRESENT 1 \
+    CONFIG.C_DOUT_DEFAULT 0x00000000 CONFIG.C_TRI_DEFAULT 0xFFFFFFFF] [get_ips gpio_0]
+create_ip -name axi_timer -vendor xilinx.com -library ip -module_name tmr_0
 generate_target all [get_ips]
 
 set liteeth $root/build/liteeth/gateware/liteeth_core.v

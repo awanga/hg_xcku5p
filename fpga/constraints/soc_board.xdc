@@ -69,3 +69,21 @@ set_false_path -to [get_ports eth_rst_n]
 # in a group with per_clk: a clock group is a false path and would override the set_max_delay/set_bus_skew of the cc_per clock converter.
 set_clock_groups -asynchronous -group [get_clocks eth_rx_clk] -group [get_clocks -of_objects [get_nets per_clk]] \
     -group [get_clocks -of_objects [get_pins u_mmcm/CLKOUT1]]
+
+# MS5611 barometer (SPI, bank 86, 3.3 V), DS18B20 (1-Wire with 4.7 k board pull-up) and buzzer (NMOS drive, active high) are in bank 86.
+set_property PACKAGE_PIN B11 [get_ports ms_sclk]
+set_property PACKAGE_PIN C11 [get_ports ms_mosi]
+set_property PACKAGE_PIN A10 [get_ports ms_miso]
+set_property PACKAGE_PIN B10 [get_ports ms_cs_n]
+set_property PACKAGE_PIN W13 [get_ports ds18b20_io]
+set_property PACKAGE_PIN W12 [get_ports beep]
+set_property IOSTANDARD LVCMOS33 [get_ports {ms_sclk ms_mosi ms_miso ms_cs_n ds18b20_io beep}]
+set_property SLEW FAST [get_ports {ms_sclk ms_mosi ms_cs_n}]
+set_property DRIVE 8 [get_ports {ms_sclk ms_mosi ms_cs_n}]
+# 4-wire fan: PWM E15 (through NMOS Q9) and tach G17 (clamped to 1.8 V on the board), bank 67 at VADJ = 1.8 V (the jumper the UART needs anyway).
+set_property PACKAGE_PIN E15 [get_ports fan_pwm]
+set_property PACKAGE_PIN G17 [get_ports fan_fb]
+set_property IOSTANDARD LVCMOS18 [get_ports {fan_pwm fan_fb}]
+# All of these are slow (<= 25 MHz SPI, kHz PWM and tach, microsecond 1-Wire timing) and generated from or sampled by per_clk logic.
+set_false_path -from [get_ports {ms_miso ds18b20_io fan_fb}]
+set_false_path -to [get_ports {ms_sclk ms_mosi ms_cs_n ds18b20_io beep fan_pwm}]

@@ -47,6 +47,26 @@
 		clock-frequency = <100000000>;
 	};
 
+	/* flags 6 = GPIO_OPEN_DRAIN (single ended, open drain) */
+	onewire {
+		compatible = "w1-gpio";
+		gpios = <&gpio 0 6>;
+	};
+
+	beeper {
+		compatible = "gpio-beeper";
+		gpios = <&gpio 1 0>;
+	};
+
+	/* 4-wire fan: PWM 25 kHz, tach 2 pulses per revolution on the GPIO interrupt (falling edge) */
+	fan {
+		compatible = "pwm-fan";
+		pwms = <&pwm 0 40000 0>;
+		interrupt-parent = <&gpio>;
+		interrupts = <2 2>;
+		pulses-per-revolution = <2>;
+	};
+
 	memory@40000000 {
 		device_type = "memory";
 		reg = <0x40000000 0x40000000>;
@@ -93,6 +113,55 @@
 				voltage-ranges = <3300 3300>;
 				non-removable;
 			};
+		};
+
+		/* MS5611 barometer on its own SiFive-compatible SPI master (SPI mode 0, <= 20 MHz per the datasheet) */
+		spi1: spi@f8005000 {
+			compatible = "sifive,spi0";
+			reg = <0xf8005000 0x1000>;
+			interrupt-parent = <&plic>;
+			interrupts = <4>;
+			clocks = <&per_clk>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			sifive,fifo-depth = <8>;
+			sifive,max-bits-per-word = <8>;
+
+			barometer@0 {
+				compatible = "meas,ms5611";
+				reg = <0>;
+				spi-max-frequency = <10000000>;
+			};
+		};
+
+		/* AXI GPIO: 0 DS18B20 1-Wire (open drain, 4.7 k pull-up on the board), 1 buzzer (active high), 2 fan tach input */
+		gpio: gpio@f8003000 {
+			compatible = "xlnx,xps-gpio-1.00.a";
+			reg = <0xf8003000 0x1000>;
+			interrupt-parent = <&plic>;
+			interrupts = <5>;
+			interrupt-controller;
+			#interrupt-cells = <2>;
+			gpio-controller;
+			#gpio-cells = <2>;
+			xlnx,gpio-width = <3>;
+			xlnx,is-dual = <0>;
+			xlnx,all-inputs = <0>;
+			xlnx,all-outputs = <0>;
+			xlnx,dout-default = <0>;
+			xlnx,tri-default = <0xffffffff>;
+			xlnx,interrupt-present = <1>;
+		};
+
+		/* AXI Timer in PWM mode; fpga/rtl/soc_top.v inverts its output for the fan's NMOS driver, so the fan sees this duty directly */
+		pwm: pwm@f8004000 {
+			compatible = "xlnx,xps-timer-1.00.a";
+			reg = <0xf8004000 0x1000>;
+			clocks = <&per_clk>;
+			clock-names = "s_axi_aclk";
+			#pwm-cells = <3>;
+			xlnx,count-width = <32>;
+			xlnx,one-timer-only = <0>;
 		};
 
 		/*
