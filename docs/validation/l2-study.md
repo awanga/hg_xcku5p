@@ -75,3 +75,16 @@ Findings on hardware (these supersede the simulation conclusions where they diff
 Do not add an L2 yet. Start with the hub-only coherent SoC (needed for DMA) and decide on an L2 with a Linux workload: it helps only random access
 over sets between the L1 and the L2 size, and penalises everything larger. If random-access sets of 64-256 KiB dominate, 128-256 KiB (4-8 URAM) is the size to try;
 512 KiB and above give no board-measured benefit that justifies the extra Fmax loss (its image misses 333 MHz timing).
+
+## Linux workload baseline (2026-11-06, soc_base vv_sync1, no L2, no coherency hub)
+Measured under Linux (3,000,000 bytes of concatenated rootfs binaries, tmpfs, busybox tools, idle system; `time`):
+| Workload | Time | Cycles/byte at 333 MHz |
+| gzip -c (default level) | 13.05 s | ~1450 |
+| gunzip | 0.98 s | ~109 |
+| md5sum | 0.18 s | ~20 |
+- gzip's hash chains and 32 KiB window are random access over a set above the 16 KiB L1: the class an L2 helps. md5sum and gunzip are mostly
+  sequential/compute: an L2 would not help them (and the study shows it can slow them).
+- Ethernet is not an L2 argument: packet copy is bound by MMIO latency (~190 ns per 32-bit access), which no cache covers.
+- Not decided: there is no Linux-capable L2 image, so the benefit on gzip is unmeasured. Upper bound from the study (random access up to ~2x on a
+  set that fits) would turn 13 s into at most ~7 s for that workload only, at ~15-20 MHz of Fmax. The L2 variants lack the SD/Ethernet SoC and miss timing.
+- User-space rdcycle/rdinstret trap (illegal instruction): no CPI measurement from user space.

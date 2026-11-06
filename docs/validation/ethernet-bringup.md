@@ -6,7 +6,15 @@ Bitstream build/soc/vv_eth5 (source f8d2f4f), SD-booted Linux 6.18.59, router wi
 - Link 1000 Mb/s, DHCP lease obtained at boot, ping 0.35-0.45 ms.
 - Receive throughput (2026-11-06): busybox `wget` of a 40 MB file from a host Python http.server, three runs, each exactly 40000000 bytes in 13.1 s =
   3.05 MB/s (24 Mb/s). Likely CPU/bus bound (333 MHz in-order core, packet buffers behind the 100 MHz AXI-Lite peripheral path); not profiled.
-- Transmit throughput not measured: busybox has no nc/iperf, and `wget --post-file` hung against the test server. Add iperf3 to the rootfs.
+- iperf3 (2026-11-06, board 192.168.1.247 to host, 10 s TCP, vv_sync1, 1 CPU, 1000 Mb/s link; CPU split from /proc/stat):
+  | Direction | Throughput | Retransmits | CPU |
+  | board to host (TX) | 70 Mb/s (two runs: 70.6, 69.8) | 0 | sys 94 %, idle 0 % |
+  | host to board (RX, -R) | 43.5 Mb/s (two runs: 43.7, 43.5) | ~3100 | sys 21 %, softirq 67 %, idle 12 % |
+  `ethtool -S` is not implemented by the driver; /proc/net/dev shows no rx/tx errors or drops, so the RX retransmits are loss the driver cannot see
+  (LiteEth has 2 RX slots of 2 KiB; a frame arriving while both are held is dropped in hardware). Not yet confirmed as the cause.
+- Cause of the low rate: packet data is copied by the CPU through the buffer window with `memcpy_fromio/toio`. A 32-bit access to that window takes
+  ~190 ns (read 193, write 184; user-space mmap of /dev/mem, 500 x 2 KiB), 20-22 MB/s at best, against 11 ns for DDR. A 1500-byte frame costs ~70 us
+  of CPU for the copy alone. The path is bound by MMIO latency (333 MHz CPU, clock converters, 100 MHz AXI-Lite peripheral bus), not DDR or cache.
 - /proc/interrupts: uartlite, spi and eth0 all count.
 - An earlier no-link period was a bad cable (RJ45 LEDs stayed dark; a known-good cable fixed it); not an RTL fault.
 
@@ -26,4 +34,4 @@ Bitstream build/soc/vv_eth5 (source f8d2f4f), SD-booted Linux 6.18.59, router wi
 
 ## Not validated / open
 - GMII input/output delay constraints are datasheet-based (unverified); WNS of vv_eth5 is +0.003 ns.
-- Transmit throughput, CPU load, error counters and long-run stability untested.
+- Long-run stability untested. RX loss source unconfirmed. Possible fixes (not tried): 64-bit buffer accesses, more RX slots, DMA through the coherent port.

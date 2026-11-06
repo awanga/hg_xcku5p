@@ -43,9 +43,11 @@
   gateway's two sampling flops (pending, wait-for-completion), which can disagree and block an interrupt for good; it depends on placement (same source:
   vv_eth5 0/16 hangs, vv_base2 9/16). Fixed with irq_sync (2 flops); vv_sync1 (WNS +0.060): 16/16 boots detect the card, typed-burst 50/50. UART TX checked
   with fw/app/uart_burst.c + tools/uart_burst_check.py (fine); capture consoles with pyserial, not `cat` (cat garbles the log).
-  Next: merge-ready bitstream is build/soc/vv_sync1; TX throughput and CPU load (add iperf3 to the rootfs); L2 decision with a Linux workload; GMII IO
+  iperf3 (2026-11-06): TX 70 Mb/s (CPU 94 % sys, 0 retx), RX 43.5 Mb/s (~3100 retx, softirq 67 %); bound by ~190 ns per 32-bit access in the Ethernet buffer
+  window (memcpy_fromio), not DDR/cache. L2: no change; gzip baseline 13 s/3 MB recorded in l2-study.md; an L2 Linux image would be needed to measure it.
+  Next: merge-ready bitstream is build/soc/vv_sync1; RX loss cause and faster buffer path; GMII IO
   constraints (datasheet-based); SD data-in (sd_dat0) is an unsynchronized async input (report_cdc), harmless at present. Experiments irq_blank (SPI level
-  with blanking) and uart_irq_hold are on local branches feature/spi-irq-level and experimental/uart-irq-hold: superseded, can be deleted.
+  with blanking) and uart_irq_hold were superseded and deleted.
 - (older) Next: when build/soc/vv_333b.log shows EXIT=0, `openFPGALoader --cable ft232 build/soc/vv_333b/soc.bit`, then
   `tools/load.py fw/membench/build/membench_app.bin` to measure real L2-less latency vs the simulation model; then rerun L2 study on hardware;
   Linux-like workload; VexRiscv-SMP sim baseline.
