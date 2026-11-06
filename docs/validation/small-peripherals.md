@@ -7,7 +7,7 @@ All use upstream drivers; the device-tree nodes are in `linux/dts/hg-xcku5p.dtsi
 |---|---|---|---|---|
 | Barometer | second `spi_sifive` master, pins B11 SCLK, C11 MOSI, A10 MISO, B10 CS (bank 86, 3.3 V) | 0xF8005000, source 4 | `spi-sifive` + IIO `ms5611`/`ms5607` | `meas,ms5607` reads 99.87 kPa, 33.6 C; with `meas,ms5611` it read 49.9 kPa (half) |
 | Temperature | AXI GPIO bit 0 through an IOBUF on W13 (open drain, board pull-up) | 0xF8003000, source 5 | `w1-gpio` + `w1_therm` | DS18B20 28-000000d458dc found, 30.4-31.7 C, 30/30 reads OK |
-| Buzzer | AXI GPIO bit 1 on W12 (NMOS, active high) | same GPIO | `gpio-beeper` (input device, evdev) | driver registered, tone command accepted; audibility not confirmed |
+| Buzzer | AXI GPIO bit 1 on W12 (NMOS, active high) | same GPIO | `gpio-beeper` (input device, evdev) | driver registered; owner heard it sound (2026-11-06; the test sent tone events and a rapid on/off toggle, which of them was audible was not recorded) |
 | Fan | AXI Timer PWM (pwm-xilinx), pin E15 inverted for the board's NMOS; tach G17 on GPIO bit 2 (edge interrupt) | 0xF8004000 | `pwm-fan` (hwmon) | pwm1 255 / 128 / 64 / 0 gave 5395 / - / 2111 / 0 rpm; default after boot 6093 rpm |
 
 Findings
@@ -19,3 +19,18 @@ Findings
 - Regression with these changes: 16/16 boots detect the SD card and reach login; Ethernet 38.6 Mb/s RX (unchanged), CRC errors 0.
 - Not tested: pressure accuracy against a reference, fan behavior under a thermal governor (no thermal zone is defined), buzzer volume or frequency range, sensor behavior
   over a long run.
+
+## Fan governor and die temperature (vv_fan2, 2026-11-06)
+- `fpga/rtl/drp_reader.v` reads the SYSMON temperature register (address 0, default mode) about every 0.65 ms into board register 0xF8001020
+  (`soc_regs.v`); degC = code * 509.3140064 / 65536 - 280.2308787 (SYSMONE4 transfer function from memory; absolute accuracy of a degree or two is unverified).
+  First reading 41.5 C with the fan stopped, DS18B20 37 C at the same time; 32 C after a reboot with the fan at full speed.
+- `linux/rootfs/fan-governor` (installed in `/usr/sbin`, started by `/etc/init.d/S04fan`): stopped below 40 C, restarts at 45 C, 77/255 from 45 C rising linearly to 255 at
+  70 C, up at once and down by at most 10 per 2 s cycle; unreadable or implausible reading or the service stopping gives 255. Settings (T_OFF, T_ON, T_MAX, MIN_DUTY, STEP_DOWN, PERIOD)
+  can be set in the environment or `/etc/default/fan-governor`, which is on the read-only root, so changing them needs a new image. `fan-governor -1` runs one cycle and applies it.
+- Board checks: idle sequence over 3 minutes was stopped (41-44 C) -> started at 45 C (2050 rpm at 77) -> cooled to 40 C -> ramped down to stop; `S04fan stop` gave pwm 255 / 6123 rpm;
+  a bad temperature register gave 255; killing a governor with shifted thresholds gave 255 (trap); restart ramped down from 255 by 10 per cycle.
+  A fan that cycles on and off every few minutes at idle is the hysteresis working; widen the band or raise MIN_DUTY if that is annoying.
+- Host tests: `tests/rootfs/run.sh` (112 checks against an independent policy model, 5 mutants detected); RTL: `tests/rtl/run.sh` covers drp_reader (3 mutants) and the register.
+- Not tested: behaviour at high die temperature (no load that heats the die was run), the thermal framework (no kernel thermal zone: the governor is a userspace service),
+  a governor killed with SIGKILL (fan stays at its last duty).
+- Regression: 16/16 boots detect the SD card; Ethernet RX 38.4 Mb/s, 0 CRC errors.
