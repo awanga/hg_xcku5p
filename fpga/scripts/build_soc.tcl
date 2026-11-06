@@ -69,8 +69,10 @@ report_utilization -file $outdir/synth_utilization.rpt
 close_design
 if {$upto eq "synth"} { puts "BUILD_DONE synth"; exit 0 }
 set_property STEPS.WRITE_BITSTREAM.TCL.PRE {} [get_runs impl_1]
-# Strategies with a post-route phys_opt step need the run taken past route_design to be openable.
-launch_runs impl_1 -to_step [expr {$strategy eq "" ? "route_design" : "phys_opt_design (Post-Route)"}] -jobs 8
+# A run whose strategy enables post-route phys_opt must be taken through it to be openable.
+set last_step route_design
+if {[get_property STEPS.POST_ROUTE_PHYS_OPT_DESIGN.IS_ENABLED [get_runs impl_1]]} { set last_step "phys_opt_design (Post-Route)" }
+launch_runs impl_1 -to_step $last_step -jobs 8
 wait_on_run impl_1
 puts "RUN impl_1: [get_property STATUS [get_runs impl_1]]"
 open_run impl_1
