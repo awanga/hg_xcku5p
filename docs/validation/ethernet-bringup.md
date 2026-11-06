@@ -18,7 +18,12 @@ Bitstream build/soc/vv_eth5 (source f8d2f4f), SD-booted Linux 6.18.59, router wi
 - Board registers 0x18 (PHY RSTB state) and 0x1C (RXCLK edge count per 2^15 per_clk cycles: 40960 = 125 MHz) aid bring-up.
 - LiteEth releases <= 2024.12 / tag 2026.08 never flag CRC errors on the 8-bit GMII path; upstream master is pinned (docs/versions.md).
 
+## Interrupt synchronization (found during this bring-up)
+- report_cdc showed the UART, SPI and Ethernet interrupts (per_clk) feeding the PLIC gateways (CPU clock) with no synchronizer. Each gateway samples
+  its source in two flops; if they disagree the gateway waits for a completion that never comes and the interrupt is dead. Symptoms: SD detection
+  hanging at boot, serial input dying. Placement-dependent: identical source gave 0/16 hangs (vv_eth5) and 9/16 (vv_base2).
+- Fix: fpga/rtl/irq_sync.v (2-flop, ASYNC_REG). Board evidence, vv_sync1: 16/16 boots detect the card and reach login; typed-burst test 50/50.
+
 ## Not validated / open
 - GMII input/output delay constraints are datasheet-based (unverified); WNS of vv_eth5 is +0.003 ns.
-- Serial console intermittently drops or stops output on several bitstreams, including pre-Ethernet ones (TASKS.md Open).
 - Transmit throughput, CPU load, error counters and long-run stability untested.

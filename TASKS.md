@@ -38,13 +38,14 @@
 - Status (2026-10-30): Linux 6.18.59 + OpenSBI 1.9 + Buildroot boots to a login prompt on the board (validation/linux-bringup.md), now also cold from the SD
   card (ROM -> OpenSBI -> kernel, read-only ext4 root on p1, journalled noatime /data on p2, root home persists across reset; resets during the ROM
   read and during Linux boot recover). vv_sd2 misses timing by 0.065 ns (ran). Next: Ethernet (LiteEth GMII), L2 decision with a Linux workload, timing margin.
-- Status (2026-11-05): Ethernet merged to develop (GMII 1000 Mb/s, DHCP, ping 0.4 ms on vv_eth5; docs/validation/ethernet-bringup.md). UART checked with
-  fw/app/uart_burst.c + tools/uart_burst_check.py (32-bit, byte and fenced polled TX: 60/60 lines intact; unchecked writes to a full 16-byte FIFO drop
-  data and the UART then stays full). The "garbled/dying console" seen earlier came from capturing with `cat`; capture with pyserial (raw) instead.
-  OPEN: intermittent SD detection hang at boot (rate varies with timing: 0-100%, also on pre-Ethernet vv_sd): the first CMD52 SPI transfer never
-  completes (clean log, vv_eth8 run 6), once with the SPI interrupt line high but unserved (vv_eth7dbg LEDs). PLIC gateway ignores a source while a claim
-  is outstanding (generated RTL). irq_pulse/uart_irq_hold experiments live on experimental/uart-irq-hold (did not fix it). Console loss under fast typed
-  input (RX burst) not yet isolated. Debug aids: linux/dts/hg-xcku5p-sdroot-{netcon,mmcdbg}.dts, tools/netcon_listen.py.
+- Status (2026-11-06): Ethernet merged (GMII 1000 Mb/s, DHCP, ping 0.4 ms, RX 3.05 MB/s; docs/validation/ethernet-bringup.md). The intermittent SD-detection
+  hang and dead-console symptoms had one root cause: the UART/SPI/Ethernet interrupts crossed per_clk -> CPU clock with no synchronizer into the PLIC
+  gateway's two sampling flops (pending, wait-for-completion), which can disagree and block an interrupt for good; it depends on placement (same source:
+  vv_eth5 0/16 hangs, vv_base2 9/16). Fixed with irq_sync (2 flops); vv_sync1 (WNS +0.060): 16/16 boots detect the card, typed-burst 50/50. UART TX checked
+  with fw/app/uart_burst.c + tools/uart_burst_check.py (fine); capture consoles with pyserial, not `cat` (cat garbles the log).
+  Next: merge-ready bitstream is build/soc/vv_sync1; TX throughput and CPU load (add iperf3 to the rootfs); L2 decision with a Linux workload; GMII IO
+  constraints (datasheet-based); SD data-in (sd_dat0) is an unsynchronized async input (report_cdc), harmless at present. Experiments irq_blank (SPI level
+  with blanking) and uart_irq_hold are on local branches feature/spi-irq-level and experimental/uart-irq-hold: superseded, can be deleted.
 - (older) Next: when build/soc/vv_333b.log shows EXIT=0, `openFPGALoader --cable ft232 build/soc/vv_333b/soc.bit`, then
   `tools/load.py fw/membench/build/membench_app.bin` to measure real L2-less latency vs the simulation model; then rerun L2 study on hardware;
   Linux-like workload; VexRiscv-SMP sim baseline.
