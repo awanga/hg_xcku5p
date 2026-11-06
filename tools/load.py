@@ -35,12 +35,14 @@ def main():
 
     import serial
 
-    s = serial.Serial(a.port, a.baud, timeout=2)
+    s = serial.Serial(a.port, a.baud, timeout=0.3)
     s.reset_input_buffer()
-    s.write(b"\n")  # wake the loader; an unknown command is ignored
-    deadline = time.time() + 20
+    deadline = time.time() + 60
     buf = b""
+    # The ROM waits only ~3 s for a key after reset (then boots from the SD card), so keep poking until the prompt appears; an
+    # unknown command is ignored by the loader.
     while not buf.endswith(b"> ") and time.time() < deadline:
+        s.write(b"\n")
         buf += s.read(64)
     if not buf.endswith(b"> "):
         print("no loader prompt; console said: %r" % buf[-200:], file=sys.stderr)

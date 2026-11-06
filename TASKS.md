@@ -62,6 +62,8 @@
 - Status (2026-11-06, vendor package): analysed docs/external/vendor_docs (not committed); notes in docs/hardware/vendor-reference.md. Its pins agree with our schematic
   extract (DDR4 67/67, SD, LED, HDMI, PCIe, QSFP refclk); no Ethernet/FMC/flash example. Open: its DDR4 IP uses part MT40A512M16LY-075 (2 GiB) vs our MT40A256M16GE-075E
   (1 GiB): test real DDR4 capacity/aliasing on the board; reuse its flash-boot bitstream properties (SPIx4, 51 MHz, compress) for the flash-boot task; sensor part MS5607 vs MS5611.
+- Status (2026-11-06, DDR4 capacity): fw/app/ddr_full.c on vv_io2q: address lines + two full 992 MiB sweeps, 0 errors (before: 64 MiB). Window is 1 GiB so >1 GiB is
+  untestable with this config; whether the parts are 4 Gb (ours) or 8 Gb (vendor IP) stays open: read the DRAM package marking, or build an 8 Gb config and test aliasing.
 - (older) Next: when build/soc/vv_333b.log shows EXIT=0, `openFPGALoader --cable ft232 build/soc/vv_333b/soc.bit`, then
   `tools/load.py fw/membench/build/membench_app.bin` to measure real L2-less latency vs the simulation model; then rerun L2 study on hardware;
   Linux-like workload; VexRiscv-SMP sim baseline.

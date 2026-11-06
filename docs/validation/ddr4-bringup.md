@@ -16,3 +16,12 @@ Design: `fpga/rtl/ddr4_bringup_top.v` (ddr4_0 + `axi_memtest` + `status_uart`), 
 - Utilization: 10374 CLB LUT (4.78 %), 13041 CLB registers (3.0 %), 25.5 BRAM tiles (5.3 %), 3 DSP, 83 bonded IOB.
   (Includes the controller's MicroBlaze MCS calibration, test engine, and UART.)
 - DRC: 0 errors; warnings DCIRST-1 x26, PDCN-1569 x3, REQP-1877 x4, RTSTAT-10 x1 (see decision 0004). 0 critical warnings.
+
+## Whole-window test on the Linux SoC (2026-11-06, vv_io2q, DDR4-2667, ui_clk 333.33 MHz)
+`fw/app/ddr_full.c` (loaded with `tools/load.py`): address-line test (unique word at the base and at base + 2^k, k = 5..29) and two full sweeps
+(hash of the address, then the inverted key; 992 MiB each, the first 32 MiB skipped for the program and stack). Result: 0 errors in all three steps, so every
+address in the 1 GiB window is a distinct, working location; before this only 64 MiB had been swept.
+Limits: the SoC window is 1 GiB (30-bit AXI address), so capacity above 1 GiB is not tested. The controller is configured for MT40A256M16GE-075E (4 Gb x16,
+15 row bits). If the parts were 8 Gb (the vendor's example IP says MT40A512M16LY-075), the extra row bit would simply be unused; the board's wiring cannot tell,
+because A15/A16 share pins with CAS_n/RAS_n. Settling it needs the part marking on the DRAM packages (FBGA code) or an 8 Gb controller build that is tested for aliasing at
+the top row bit; neither has been done.
