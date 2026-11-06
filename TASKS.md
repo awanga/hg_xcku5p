@@ -45,7 +45,9 @@
   with fw/app/uart_burst.c + tools/uart_burst_check.py (fine); capture consoles with pyserial, not `cat` (cat garbles the log).
   iperf3 (2026-11-06): TX 70 Mb/s (CPU 94 % sys, 0 retx), RX 43.5 Mb/s (~3100 retx, softirq 67 %); bound by ~190 ns per 32-bit access in the Ethernet buffer
   window (memcpy_fromio), not DDR/cache. L2: no change; gzip baseline 13 s/3 MB recorded in l2-study.md; an L2 Linux image would be needed to measure it.
-  Next: merge-ready bitstream is build/soc/vv_sync1; RX loss cause and faster buffer path; GMII IO
+  RX loss = MAC drop counter (both 2 KiB slots full; CPU ~285 us/packet). Profile: ~30 % in the Ethernet IRQ handler (copy), ~55 % spread over the stack, no hotspot;
+  more slots not worth it (pow2 limit: 4 max). DMA copy engine deferred to the PCIe/FMC work (needs the coherent hub; ceiling +15-25 Mb/s RX).
+  Next: merge-ready bitstream is build/soc/vv_sync1; GMII IO
   constraints (datasheet-based); SD data-in (sd_dat0) is an unsynchronized async input (report_cdc), harmless at present. Experiments irq_blank (SPI level
   with blanking) and uart_irq_hold were superseded and deleted.
 - (older) Next: when build/soc/vv_333b.log shows EXIT=0, `openFPGALoader --cable ft232 build/soc/vv_333b/soc.bit`, then

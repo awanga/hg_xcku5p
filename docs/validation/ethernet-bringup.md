@@ -23,6 +23,17 @@ Bitstream build/soc/vv_eth5 (source f8d2f4f), SD-booted Linux 6.18.59, router wi
 - /proc/interrupts: uartlite, spi and eth0 all count.
 - An earlier no-link period was a bad cable (RJ45 LEDs stayed dark; a known-good cable fixed it); not an RTL fault.
 
+## Where the RX time goes (kernel profile, 2026-11-06)
+Profiling kernel (`KPROFILE=1 DTS_NAME=hg-xcku5p-sdroot-prof linux/build_sd.sh`, `profile=2`, `readprofile` with the kernel System.map), iperf3 RX, 10 s,
+2488 samples, 37.7 Mb/s:
+- handle_softirqs 738 (30 %): the sampling tick cannot fire while the Ethernet interrupt handler runs with interrupts off, so this is that handler
+  (frame copy `memcpy_fromio` and CSR accesses) charged to the first instruction after interrupts are re-enabled. Consistent with the ~25 % copy estimate.
+- idle 266 (11 %). liteeth_start_xmit + memcpy_toio (ACK transmit) ~100 (4 %).
+- The remaining ~55 % is spread over the TCP/IP stack and allocator with no function above 2 % (tcp_recvmsg, ip_rcv, __alloc_skb, page and slab alloc/free,
+  checksum, scheduler): no cheap software hotspot to remove.
+- More RX slots were considered and not built: LiteX requires power-of-two slot regions, so the 16 KiB buffer window allows only 4 RX + 2 TX; 2 more slots
+  absorb ~50 us of a burst against ~285 us per packet, so they cannot change the sustained rate.
+
 ## Design facts established
 - LiteEthPHYGMII derives GTX_CLK and the TX domain from the PHY RX clock. The RTL8211EG only outputs 125 MHz RXCLK once linked
   (idle RXCLK is 2.5 MHz), so the generated core is post-processed to use a 125 MHz MMCM clock (fpga/scripts/gen_liteeth.sh).

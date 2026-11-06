@@ -4,12 +4,13 @@
 # usage: linux/build_sd.sh   (needs build/linux/br from Buildroot and the sources under build/third_party)
 # DTS_NAME selects the device tree (default hg-xcku5p-sdroot; hg-xcku5p-sdroot-netcon adds netconsole).
 # KDEBUG=1 adds dynamic debug to the kernel for driver bring-up; DATA_MIB sets the data partition size (default 256).
+# KPROFILE=1 enables kernel profiling (use with DTS_NAME=hg-xcku5p-sdroot-prof, then readprofile with the kernel System.map).
 set -eu
 here=$(cd "$(dirname "$0")/.." && pwd)
 b=$here/build/linux
 src=$here/build/third_party/linux
 cross=$b/br/host/bin/riscv64-buildroot-linux-musl-
-KDEBUG=${KDEBUG:-0} "$here/linux/kernel/configure.sh" "$src" "$b/kernel_sd" "$cross" ""
+KDEBUG=${KDEBUG:-0} KPROFILE=${KPROFILE:-0} "$here/linux/kernel/configure.sh" "$src" "$b/kernel_sd" "$cross" ""
 make -C "$src" ARCH=riscv CROSS_COMPILE="$cross" O="$b/kernel_sd" -j8 Image >"$b/kernel_sd.log" 2>&1
 cpp -nostdinc -undef -x assembler-with-cpp -I"$here/linux/dts" "$here/linux/dts/${DTS_NAME:-hg-xcku5p-sdroot}.dts" |
 	dtc -I dts -O dtb -o "$b/hg-xcku5p-sdroot.dtb" -
