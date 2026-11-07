@@ -8,7 +8,7 @@ Goal: the FPGA configures itself from the QSPI flash at power-up/PROG_B, with no
 - Programmed with openFPGALoader 0.13.1 over the FT232H (spiOverJtag bridge `spiOverJtag_xcku5p-ffvb676`), erase + write + `--verify` passed.
 - Check: loaded the older vv_per1 bitstream by JTAG (die-temperature register 0xF8001020 reads 0), then `openFPGALoader --cable ft232 -r`;
   the board reconfigured and the register reads 0x00009B64 (fan2 design) and Linux boots from the SD card. So the flash image configures the FPGA.
-- Not yet checked: a cold power-up from flash (owner power cycle), and that the M[2:0] straps work at power-up rather than after a `-r` reconfigure.
+- Cold power-up (owner power cycle, no JTAG load): the fan came on, the console showed a fresh boot (uptime < 1 min) and the die-temperature register read 0x00009E9B. The M[2:0] straps work at power-up.
 - The previous flash content (32 MiB dump, 98 non-blank 64 KiB blocks up to 6.4 MB: the vendor demo) is kept outside the repository.
 
 ## Findings
