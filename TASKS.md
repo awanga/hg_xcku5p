@@ -69,7 +69,9 @@
   Ethernet unchanged. See docs/validation/small-peripherals.md.
 - Status (2026-11-06, fan governor): SYSMON die temperature in board register 0xF8001020 + userspace fan-governor (stop <40 C, start 45 C, 30 % to 100 % at 70 C, fail-safe full speed);
   vv_fan2 (WNS +0.012, WHS +0.010; vv_fan1 missed by 0.127), board-tested as above, 16/16 boots, Ethernet unchanged. Open: high-temperature behaviour untested, SYSMON constants from memory.
-  Next: flash boot (vendor bitstream properties in vendor-reference.md; overwrites the config flash: get the owner's go-ahead on the exact command first).
+- Status (2026-11-07, flash boot): vv_fan2 written to the config flash (SPIx4, 51 MHz, compressed), verified; `-r` reconfigure from flash boots Linux (docs/validation/flash-boot.md).
+  Finding: the flash probes as 128 Mb (JEDEC 0x20BB18), not the owner-stated 256 Mb MT25QU256: owner to confirm. Cold power-up from flash not yet checked.
+  Next: owner power-cycle check; then the next feature (PCIe/FMC per README), DDR4 capacity, L2 with a Linux workload.
 - (older) Next: when build/soc/vv_333b.log shows EXIT=0, `openFPGALoader --cable ft232 build/soc/vv_333b/soc.bit`, then
   `tools/load.py fw/membench/build/membench_app.bin` to measure real L2-less latency vs the simulation model; then rerun L2 study on hardware;
   Linux-like workload; VexRiscv-SMP sim baseline.

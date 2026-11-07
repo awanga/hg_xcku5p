@@ -18,6 +18,7 @@ Net names in the PDF netlist have `_` replaced by `0`; the CSV is decoded agains
 
 ## Configuration flash — MT25QU256ABA1EW9-0SIT (U15)
 - Schematic part matches the owner-stated part number. 256 Mb, 1.8 V (VCC = +1.8 V). **S-text**
+- **Board test (2026-11-07):** the device answers JEDEC ID 0x20BB18, i.e. a 128 Mb 1.8 V part, not 256 Mb (0x20BB19); see docs/validation/flash-boot.md.
 - Wired to dedicated config pins (bank 0, VCCO +1.8 V): CS#=AA12, CLK=Y11, DQ0..3 = AD11, AC12, AC11, AE11 => x4 QSPI. **S-image**
 - Mode pins: M2 (AF12)=GND, M1 (AA9)=GND, M0 (AA10)=+1.8 V => M[2:0]=001, Master SPI. **S-image; verify against UG570**
 - DONE=AB11 (LED10), PROGRAM_B=AB9 (RST_1V8 net, button SW2 via TPS3801 supervisor), INIT_B=W10 (2K to 1.8 V).
