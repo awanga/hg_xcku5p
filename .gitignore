@@ -36,3 +36,6 @@ fw/*/build/
 .gen/
 .srcs/
 fw/*/build*/
+
+# Vendor factory flash image (vendor IP, public repo: keep local, see factory/README.md)
+factory/*.xz
