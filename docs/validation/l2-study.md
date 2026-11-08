@@ -88,3 +88,30 @@ Measured under Linux (3,000,000 bytes of concatenated rootfs binaries, tmpfs, bu
 - Not decided: there is no Linux-capable L2 image, so the benefit on gzip is unmeasured. Upper bound from the study (random access up to ~2x on a
   set that fits) would turn 13 s into at most ~7 s for that workload only, at ~15-20 MHz of Fmax. The L2 variants lack the SD/Ethernet SoC and miss timing.
 - User-space rdcycle/rdinstret trap (illegal instruction): no CPI measurement from user space.
+
+## Linux workload with an L2 (2026-11-08, full SoC: SD, Ethernet, peripherals)
+Same CPU, DDR4 and rootfs; only the SoC netlist differs. Images: `vv_d8g1` (no hub, no L2; the baseline), `vv_l2e256` (coherency hub + 256 KiB 4-way L2),
+`vv_l2e128` (hub + 128 KiB 4-way L2). Workload (`time`, busybox, input = first 3,000,000 bytes of `/usr/bin/* /usr/lib/*.so* /bin/busybox` in tmpfs, two runs each,
+runs within 1 %): gzip -c, gunzip -c, md5sum, a 20000-iteration shell loop, `tar cf - /usr /lib /bin /sbin | wc -c` (second run, warm), `sort` of the input.
+
+| Workload | no L2 | L2 256 KiB | L2 128 KiB |
+|---|---|---|---|
+| gzip -c (3 MB) | 13.5 s | 8.5 s (1.58x) | 8.7 s (1.55x) |
+| gunzip | 1.00 s | 0.93 s | 0.94 s |
+| md5sum | 0.18 s | 0.18 s | 0.18 s |
+| shell loop | 2.8 s | 2.1 s (1.33x) | 2.2 s (1.28x) |
+| tar | 0.54 s | 0.48 s | 0.50 s |
+| sort | 24.4 s | 23.1 s (1.06x) | 23.3 s (1.05x) |
+| Timing (333 MHz) | WNS +0.012 (vv_fan2) / +0.003 (d8g1) | WNS -0.154 (fix pass did not close it; run as is, performance data only) | WNS +0.020, WHS +0.010 |
+| CLB LUT / FF / BRAM / URAM | 20.5k / 24.8k / 42.5 / 0 | not extracted | 22.7k / 28.0k / 44.5 / 4 |
+
+Findings:
+- Both L2 images boot Linux from SD, run the workloads and reply to ping; Ethernet throughput and the other peripherals were not re-measured on them.
+- The gain comes from random-access user code (gzip's hash chains, interpreter state): 1.3-1.6x. Sequential and compute-bound jobs (gunzip, md5sum, tar) do not change, and the
+  hub's sequential-read penalty seen with membench (about 29 %) does not show up in these workloads. The 128 KiB L2 gets 97 % of the 256 KiB gain here and meets timing; 256 KiB does not (-0.154 ns).
+- Cost of the 128 KiB option versus the non-coherent SoC: +2.2k LUT, +3.2k FF, +2 BRAM tiles, 4 URAM (6 % of the device), and the coherency hub that DMA needs anyway.
+- Caveats: one busybox workload set, one run per image on the board, a single input file; the comparison includes the hub (no hub-only Linux image was measured).
+
+Recommendation: adopt the coherent SoC with a 128 KiB 4-way L2 as the default. 256 KiB buys nothing measurable here and misses timing; no L2 leaves 1.3-1.6x on the table for
+random-access code. This needs the owner's confirmation (it changes the default netlist, the flash image and the ROM/boot images are unchanged).
+
