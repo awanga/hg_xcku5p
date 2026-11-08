@@ -62,6 +62,7 @@ module soc_top #(
     // ---------------------------------------------------------------- clocks and resets
     wire clk50_ibuf, mmcm_fb, mmcm_locked, per_clk_raw, per_clk, eth_clk125;
     wire ui_clk, ui_rst, calib;
+    wire ddr_half;
     wire cpu_clk = ui_clk;
 
     IBUF u_clk50_ibuf (.I(clk50), .O(clk50_ibuf));
@@ -165,7 +166,19 @@ module soc_top #(
     // CA parity is disabled in the controller, which then has no PAR port; drive the DRAM PAR input low (DDR4 needs a valid level).
     assign c0_ddr4_par = 1'b0;
 
-    ddr4_0 u_ddr4 (
+    `ifdef DDR_8G
+    // Capacity-test build (8 Gb controller): DDRHALF selects the upper 1 GiB half in the top 256 MiB of the window (ddr_halfmap.v).
+    // The select is static during a test, so a two-flop synchronizer into ui_clk is enough.
+    (* ASYNC_REG = "TRUE" *) reg [1:0] ddr_half_s;
+    always @(posedge ui_clk) ddr_half_s <= {ddr_half_s[0], ddr_half};
+    wire [30:0] d_awaddr, d_araddr;
+    ddr_halfmap u_halfmap_w (.addr(m_awaddr[29:0]), .sel(ddr_half_s[1]), .ddr_addr(d_awaddr));
+    ddr_halfmap u_halfmap_r (.addr(m_araddr[29:0]), .sel(ddr_half_s[1]), .ddr_addr(d_araddr));
+`else
+    wire [29:0] d_awaddr = m_awaddr[29:0];
+    wire [29:0] d_araddr = m_araddr[29:0];
+`endif
+ddr4_0 u_ddr4 (
         .c0_init_calib_complete(calib),
         .dbg_clk(),
         .c0_sys_clk_p(c0_sys_clk_p),
@@ -189,7 +202,7 @@ module soc_top #(
         .c0_ddr4_ui_clk_sync_rst(ui_rst),
         .c0_ddr4_aresetn(ui_rst_n),
         .c0_ddr4_s_axi_awid(m_awid),
-        .c0_ddr4_s_axi_awaddr(m_awaddr[29:0]),
+        .c0_ddr4_s_axi_awaddr(d_awaddr),
         .c0_ddr4_s_axi_awlen(m_awlen),
         .c0_ddr4_s_axi_awsize(m_awsize),
         .c0_ddr4_s_axi_awburst(m_awburst),
@@ -209,7 +222,7 @@ module soc_top #(
         .c0_ddr4_s_axi_bresp(m_bresp),
         .c0_ddr4_s_axi_bvalid(m_bvalid),
         .c0_ddr4_s_axi_arid(m_arid),
-        .c0_ddr4_s_axi_araddr(m_araddr[29:0]),
+        .c0_ddr4_s_axi_araddr(d_araddr),
         .c0_ddr4_s_axi_arlen(m_arlen),
         .c0_ddr4_s_axi_arsize(m_arsize),
         .c0_ddr4_s_axi_arburst(m_arburst),
@@ -295,7 +308,7 @@ module soc_top #(
     soc_regs #(.CPU_KHZ(CPU_KHZ)) u_regs (
         .clk(per_clk), .rst_n(per_rst_n), .we(rg_we), .addr(rg_addr[5:2]), .wdata(rg_wdata), .wstrb(rg_wstrb),
         .re(rg_re), .rdata(rg_rdata), .led(led), .key_in(key_rst), .ddr_calib_in(calib), .ddr_rst_n_in(ui_rst_n),
-        .eth_rst_n_in(eth_rst_n), .eth_clk_count_in(eth_clk_count), .die_temp_in(die_temp));
+        .eth_rst_n_in(eth_rst_n), .eth_clk_count_in(eth_clk_count), .die_temp_in(die_temp), .ddr_half(ddr_half));
     wire [31:0] eth_clk_count;
 
     // FPGA die temperature: the SYSMON runs in its default mode (temperature and supplies converted continuously); drp_reader reads the

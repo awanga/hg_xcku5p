@@ -26,7 +26,7 @@ There is no Ethernet, FMC or user-flash example: the GMII constraints and PHY be
   the open "PAR undriven" item (no CA parity in either design).
 - DDR4 IP settings in the vendor project: 32-bit, tCK 750 ps (DDR4-2667), 100 MHz differential input clock, CL 19, CWL 14, 4:1, 1.2 V, DM_NO_DBI,
   no ECC, row-column-bank map: the same as ours. **Discrepancy:** its `MemoryPart` is `MT40A512M16LY-075` (8 Gb parts, 2 GiB) while its tutorial text says
-  `MT40A256M16GE-075E` (4 Gb, 1 GiB), which is what we use. The board's real capacity is therefore not independently confirmed; see the DDR4 capacity item in TASKS.md.
+  `MT40A256M16GE-075E` (4 Gb, 1 GiB), which is what we use. The board test of 2026-11-08 shows 4 Gb parts (1 GiB), so the vendor IP over-declares the density (docs/validation/ddr4-bringup.md).
 - LEDs: the 8-LED example maps D18, E17, B16, D15, E16, F15, G15, E22 to the schematic nets LED5, LED1, LED4, LED3, LED0, LED2, LED6, LED7; they match
   the extract (the vendor's port order is arbitrary). LEDs are active high (tutorial 1).
 - SD: AF14 (DAT3/CS), AE15 (CLK), AD15 (CMD/MOSI), AF13 (DAT0/MISO), LVCMOS18, SPI mode: same pins as `soc_board.xdc`. IOSTANDARD differs: the vendor uses LVCMOS18, we use LVCMOS33 (bank 84 at 3.3 V per the inventory; our setting is the one that boots Linux from the card).

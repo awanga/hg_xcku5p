@@ -19,6 +19,7 @@ module tb_soc_periph;
     wire [31:0] r_wd, r_rd;
     wire [3:0]  r_ws;
     wire [7:0]  led;
+    wire        ddr_half;
     reg         key = 1'b0, calib = 1'b0, drst = 1'b0, ethrst = 1'b0;
 
     axil_simple #(.AW(16)) u_if_r (
@@ -31,7 +32,7 @@ module tb_soc_periph;
         .addr(r_addr), .we(r_we), .wdata(r_wd), .wstrb(r_ws), .re(r_re), .rdata(r_rd));
     soc_regs #(.CPU_KHZ(400000)) u_regs (
         .clk(clk), .rst_n(rst_n), .we(r_we), .addr(r_addr[5:2]), .wdata(r_wd), .wstrb(r_ws),
-        .re(r_re), .rdata(r_rd), .led(led), .key_in(key), .ddr_calib_in(calib), .ddr_rst_n_in(drst),
+        .re(r_re), .rdata(r_rd), .led(led), .ddr_half(ddr_half), .key_in(key), .ddr_calib_in(calib), .ddr_rst_n_in(drst),
         .eth_rst_n_in(ethrst), .eth_clk_count_in(32'hCAFE0123), .die_temp_in(16'hB5A3));
 
     // rom slave
@@ -140,6 +141,17 @@ module tb_soc_periph;
         reg_read(16'h018, v); expect32(v, 32'h1, "ETH status, PHY reset released");
         reg_read(16'h01C, v); expect32(v, 32'hCAFE0123, "ETH clock count passthrough");
         reg_read(16'h020, v); expect32(v, 32'h0000B5A3, "die temperature code passthrough, upper half zero");
+        reg_read(16'h024, v); expect32(v, 32'h0, "DDRHALF reset value");
+        reg_write(16'h024, 32'hFFFFFFFE, 4'b1111, 1'b1);
+        reg_read(16'h024, v); expect32(v, 32'h0, "DDRHALF ignores other bits");
+        reg_write(16'h024, 32'h1, 4'b0000, 1'b0);
+        reg_read(16'h024, v); expect32(v, 32'h0, "DDRHALF needs strobe 0");
+        reg_write(16'h024, 32'h1, 4'b0001, 1'b1);
+        reg_read(16'h024, v); expect32(v, 32'h1, "DDRHALF set");
+        if (ddr_half !== 1'b1) begin errors = errors + 1; $display("FAIL ddr_half output"); end
+        checks = checks + 1;
+        reg_write(16'h024, 32'h0, 4'b0001, 1'b0);
+        reg_read(16'h024, v); expect32(v, 32'h0, "DDRHALF cleared");
         reg_read(16'h004, v); expect32(v, 32'h0, "KEY released");
         key = 1'b1; repeat (4) @(negedge clk);
         reg_read(16'h004, v); expect32(v, 32'h1, "KEY pressed");

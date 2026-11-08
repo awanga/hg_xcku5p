@@ -99,6 +99,12 @@ run_pe mut_sr_status "$ai" "$b/mut_sr_status.v" FAIL
 sed 's/rdata <= {16.d0, die_temp_in};/rdata <= {die_temp_in, 16'"'"'d0};/' "$sr" >"$b/mut_sr_temp.v"
 cmp -s "$sr" "$b/mut_sr_temp.v" && { echo "FAIL mutant sr_temp unchanged"; fail=1; }
 run_pe mut_sr_temp "$ai" "$b/mut_sr_temp.v" FAIL
+sed 's/if (addr == 4.d9 \&\& wstrb\[0\]) ddr_half <= wdata\[0\];/if (addr == 4'"'"'d9) ddr_half <= wdata[0];/' "$sr" >"$b/mut_sr_half.v"
+cmp -s "$sr" "$b/mut_sr_half.v" && { echo "FAIL mutant sr_half unchanged"; fail=1; }
+run_pe mut_sr_half "$ai" "$b/mut_sr_half.v" FAIL
+sed 's/4.d9: rdata <= {31.d0, ddr_half};/4'"'"'d9: rdata <= 32'"'"'d0;/' "$sr" >"$b/mut_sr_halfrd.v"
+cmp -s "$sr" "$b/mut_sr_halfrd.v" && { echo "FAIL mutant sr_halfrd unchanged"; fail=1; }
+run_pe mut_sr_halfrd "$ai" "$b/mut_sr_halfrd.v" FAIL
 sed 's/rdata_q  <= rdata;/rdata_q  <= 32'"'"'d0;/' "$ai" >"$b/mut_ai_rdata.v"
 cmp -s "$ai" "$b/mut_ai_rdata.v" && { echo "FAIL mutant ai_rdata unchanged"; fail=1; }
 run_pe mut_ai_rdata "$b/mut_ai_rdata.v" "$sr" FAIL
@@ -216,5 +222,21 @@ run_em mut_em_bit "$b/mut_em_bit.v" FAIL
 sed 's/15.b1111_1000_0000_001/15'"'"'b1111_1000_0000_000/' "$em" >"$b/mut_em_base.v"
 cmp -s "$em" "$b/mut_em_base.v" && { echo "FAIL mutant em_base unchanged"; fail=1; }
 run_em mut_em_base "$b/mut_em_base.v" FAIL
+
+# ddr_halfmap
+dhm=$here/fpga/rtl/ddr_halfmap.v
+tbi=$here/tests/rtl/tb_ddr_halfmap.v
+verilator --lint-only -Wall -Wno-DECLFILENAME "$dhm" >"$b/lint_dhm.log" 2>&1 && echo "PASS lint ddr_halfmap" || {
+	echo "FAIL lint ddr_halfmap"; head "$b/lint_dhm.log"; fail=1; }
+run_ip ddr_halfmap "$dhm" PASS
+sed 's/addr\[29:28\] == 2.b11/addr[29] == 1'"'"'b1/' "$dhm" >"$b/mut_dhm_win.v"
+cmp -s "$dhm" "$b/mut_dhm_win.v" && { echo "FAIL mutant dhm_win unchanged"; fail=1; }
+run_ip mut_dhm_win "$b/mut_dhm_win.v" FAIL
+sed 's/{sel & (addr\[29:28\] == 2.b11), addr}/{sel, addr}/' "$dhm" >"$b/mut_dhm_all.v"
+cmp -s "$dhm" "$b/mut_dhm_all.v" && { echo "FAIL mutant dhm_all unchanged"; fail=1; }
+run_ip mut_dhm_all "$b/mut_dhm_all.v" FAIL
+sed 's/{sel & (addr\[29:28\] == 2.b11), addr}/{sel \& (addr[29:28] == 2'"'"'b11), addr[28:0], addr[29]}/' "$dhm" >"$b/mut_dhm_rot.v"
+cmp -s "$dhm" "$b/mut_dhm_rot.v" && { echo "FAIL mutant dhm_rot unchanged"; fail=1; }
+run_ip mut_dhm_rot "$b/mut_dhm_rot.v" FAIL
 [ "$fail" = 0 ] && echo "ALL PASS" || echo "FAILURES"
 exit "$fail"

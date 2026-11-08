@@ -8,7 +8,7 @@ CFLAGS = -std=c99 -Os -Wall -Wextra $(WERROR) -Wshadow -Wstrict-prototypes -Wdou
 	 -mabi=lp64 -mcmodel=medany -ffreestanding -fno-pic
 LDFLAGS = -nostdlib -nostartfiles -Wl,--gc-sections -T app.ld
 
-all: $(BUILD)/hello.bin $(BUILD)/uart_burst.bin $(BUILD)/ddr_full.bin
+all: $(BUILD)/hello.bin $(BUILD)/uart_burst.bin $(BUILD)/ddr_full.bin $(BUILD)/ddr_cap.bin
 
 $(BUILD)/%.elf: %.c ../common/crt0.S app.ld
 	mkdir -p $(BUILD)

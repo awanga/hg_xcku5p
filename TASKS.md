@@ -64,6 +64,8 @@
   (1 GiB): test real DDR4 capacity/aliasing on the board; reuse its flash-boot bitstream properties (SPIx4, 51 MHz, compress) for the flash-boot task; sensor part MS5607 vs MS5611.
 - Status (2026-11-06, DDR4 capacity): fw/app/ddr_full.c on vv_io2q: address lines + two full 992 MiB sweeps, 0 errors (before: 64 MiB). Window is 1 GiB so >1 GiB is
   untestable with this config; whether the parts are 4 Gb (ours) or 8 Gb (vendor IP) stays open: read the DRAM package marking, or build an 8 Gb config and test aliasing.
+- Status (2026-11-08, DDR4 capacity): 8 Gb-controller build vv_d8g1 (-ddr8g, DDRHALF register 0xF8001024, fw/app/ddr_cap.c): the upper 1 GiB half aliases the lower one completely
+  => parts are 4 Gb x16, 1 GiB total (closes the open item); SoC default config unchanged. docs/validation/ddr4-bringup.md.
 - Status (2026-11-06, small peripherals): AXI GPIO + AXI Timer (PWM) + a second SPI master added; vv_per1 (WNS +0.003, WHS +0.010): DS18B20 via w1-gpio (30/30),
   MS5607 barometer via IIO (99.9 kPa; the part is an MS5607, not MS5611), fan via pwm-fan + tach (0..6000 rpm), buzzer works (owner heard it), 16/16 boots,
   Ethernet unchanged. See docs/validation/small-peripherals.md.
@@ -71,7 +73,7 @@
   vv_fan2 (WNS +0.012, WHS +0.010; vv_fan1 missed by 0.127), board-tested as above, 16/16 boots, Ethernet unchanged. Open: high-temperature behaviour untested, SYSMON constants from memory.
 - Status (2026-11-07, flash boot): vv_fan2 written to the config flash (SPIx4, 51 MHz, compressed), verified; `-r` reconfigure from flash boots Linux (docs/validation/flash-boot.md).
   Finding: the flash probes as 128 Mb (JEDEC 0x20BB18), not the owner-stated 256 Mb MT25QU256: owner to confirm. Cold power-up from flash verified by the owner.
-  Next: the next feature (PCIe/FMC per README), DDR4 capacity, L2 with a Linux workload.
+  Next: L2 decision with a Linux workload, then PCIe/FMC (owner asked to pause before it).
 - (older) Next: when build/soc/vv_333b.log shows EXIT=0, `openFPGALoader --cable ft232 build/soc/vv_333b/soc.bit`, then
   `tools/load.py fw/membench/build/membench_app.bin` to measure real L2-less latency vs the simulation model; then rerun L2 study on hardware;
   Linux-like workload; VexRiscv-SMP sim baseline.
