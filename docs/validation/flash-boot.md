@@ -28,5 +28,5 @@ Goal: the FPGA configures itself from the QSPI flash at power-up/PROG_B, with no
 After the owner adopted the coherent SoC with a 128 KiB L2 (docs/decisions/0006-l2-cache.md), the flash was rewritten with `vv_l2e128`
 (`soc_top_postroute_physopt.dcp`, WNS +0.020, WHS +0.010) through `flash_bit.tcl`: 7.4 MB, erase + write + verify passed.
 Check: after loading the older vv_fan2 by JTAG, `openFPGALoader -r` brought up a design in which the DDRHALF register (0xF8001024, present only in the d8g1/L2 builds) reads back 1.
-Cold power-up of this image has not been checked yet.
+Cold power-up (owner power cycle, no JTAG load): booted, uptime under a minute, DDRHALF reads back 1 and the die-temperature register reads 0x00009F73.
 

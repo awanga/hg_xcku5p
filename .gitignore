@@ -31,6 +31,7 @@ docs/external/
 clockInfo.txt
 cong/
 fw/*/build_sim/
+fw/*/build_simbig/
 fw/*/build/
 .Xil/
 .gen/

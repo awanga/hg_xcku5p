@@ -106,8 +106,9 @@ module tb_soc;
         .clk(clk), .en(pa_re && sel_rom), .addr(pa_addr[13:2]), .rdata(rom_rd));
     wire [7:0] led;
     soc_regs #(.CPU_KHZ(400000)) u_regs (
-        .clk(clk), .rst_n(~rst), .we(pa_we && sel_regs), .addr(pa_addr[4:2]), .wdata(pa_wdata), .wstrb(pa_wstrb),
-        .re(pa_re && sel_regs), .rdata(regs_rd), .led(led), .key_in(1'b0), .ddr_calib_in(1'b1), .ddr_rst_n_in(1'b1));
+        .clk(clk), .rst_n(~rst), .we(pa_we && sel_regs), .addr(pa_addr[5:2]), .wdata(pa_wdata), .wstrb(pa_wstrb),
+        .re(pa_re && sel_regs), .rdata(regs_rd), .led(led), .ddr_half(), .key_in(1'b0), .ddr_calib_in(1'b1), .ddr_rst_n_in(1'b1),
+        .eth_rst_n_in(1'b1), .eth_clk_count_in(32'd0), .die_temp_in(16'd0));
     wire [31:0] spi_rd;
     wire sd_sck, sd_mosi, sd_miso, sd_cs_n;
     spi_sifive u_spi (

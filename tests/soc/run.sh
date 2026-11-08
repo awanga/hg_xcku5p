@@ -1,10 +1,10 @@
 #!/bin/bash
 # SPDX-License-Identifier: MIT
 # System simulation (Verilator) of a generated SoC netlist running the boot ROM firmware, plus a fault-injection check.
-# usage: tests/soc/run.sh [soc_name]   (default soc_base; the netlist is build/soc/<soc_name>/<soc_name>.v)
+# usage: tests/soc/run.sh [soc_name]   (default soc_l2u_128k_w4, the default SoC; the netlist is build/soc/<soc_name>/<soc_name>.v)
 set -u
 here=$(cd "$(dirname "$0")/../.." && pwd)
-soc=${1:-soc_base}
+soc=${1:-soc_l2u_128k_w4}
 b=$here/build/soc_sim/$soc
 mkdir -p "$b"
 fail=0
@@ -55,7 +55,16 @@ check sdboot "HELLO FROM APP" "booted program ran"
 check sdboot "TBRESULT.* PASS" "no watchdog"
 
 # Fault injection: one corrupted read beat must be reported by the firmware (the test must be able to fail).
-run corrupt 3000 || exit 1
+# With an L2 the 64 KiB test set stays in the L2 and never returns to the memory model, so that run needs a test set larger than the L2
+# (256 KiB) before a corrupted DDR4 read beat can reach the checker.
+corrupt_beat=3000
+corrupt_rom=$here/fw/boot/build_sim/boot_rom.hex
+case "$soc" in *l2*)
+	make -s -C "$here/fw/boot" BUILD=build_simbig DEFS="-DTEST_BYTES=262144 -DTEST_PASSES=1 -DSKIP_SD_BOOT=1" >"$b/fw_big.log" 2>&1 || { echo "FAIL big firmware build"; exit 1; }
+	corrupt_rom=$here/fw/boot/build_simbig/boot_rom.hex
+	corrupt_beat=9000;;
+esac
+run corrupt "$corrupt_beat" "" "$corrupt_rom" || exit 1
 echo "soc sim $soc: corrupted memory read beat"
 check corrupt "mismatch @" "firmware reports mismatch"
 [ "$fail" = 0 ] && echo "SOC SIM PASS" || echo "SOC SIM FAIL"

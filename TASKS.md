@@ -7,7 +7,7 @@
 - Decision: no self-hosted CI runner; Vivado + hardware jobs run locally; hosted GitHub Actions only for non-licensed checks.
   Reason: user direction. Status: README/AGENTS/TASKS updated.
 - Decision: default SoC = coherency hub + 128 KiB 4-way L2 in UltraRAM (soc_l2u_128k_w4, fpga/scripts/cpu/gen_default_soc.sh), owner-approved 2026-11-08.
-  Reason: gzip 1.55x, shell 1.28x under Linux, timing met. Status: docs/decisions/0006-l2-cache.md; vv_l2e128 (WNS +0.020, WHS +0.010) is the reference bitstream and is in the config flash (verified; cold power-up check pending).
+  Reason: gzip 1.55x, shell 1.28x under Linux, timing met. Status: docs/decisions/0006-l2-cache.md; vv_l2e128 (WNS +0.020, WHS +0.010) is the reference bitstream and is in the config flash (verified, cold power-up boots).
 - Decision: board memory/flash (owner-stated, NOT yet schematic-verified): config flash MT25QU256ABA1EW9-0SIT;
   DDR4 2 x MT40A256M16GE-075E, 32-bit bus (1 GiB). Status: recorded in docs/hardware/board-inventory.md.
 - Status: Vivado 2026.1 works for xcku5p-ffvb676-2-i with the free license (scripts/check-env.sh PASS: synth, place, route, bitstream
@@ -77,7 +77,7 @@
   vv_fan2 (WNS +0.012, WHS +0.010; vv_fan1 missed by 0.127), board-tested as above, 16/16 boots, Ethernet unchanged. Open: high-temperature behaviour untested, SYSMON constants from memory.
 - Status (2026-11-07, flash boot): vv_fan2 written to the config flash (SPIx4, 51 MHz, compressed), verified; `-r` reconfigure from flash boots Linux (docs/validation/flash-boot.md).
   Finding: the flash probes as 128 Mb (JEDEC 0x20BB18), not the owner-stated 256 Mb MT25QU256: owner to confirm. Cold power-up from flash verified by the owner.
-  Next: owner decision on the 128 KiB L2 default; then pause before PCIe/FMC (owner request).
+  Next: pause here (owner request); then PCIe/FMC. Simulation (tests/soc/run.sh) now defaults to the L2 netlist; both it and soc_base pass.
 - (older) Next: when build/soc/vv_333b.log shows EXIT=0, `openFPGALoader --cable ft232 build/soc/vv_333b/soc.bit`, then
   `tools/load.py fw/membench/build/membench_app.bin` to measure real L2-less latency vs the simulation model; then rerun L2 study on hardware;
   Linux-like workload; VexRiscv-SMP sim baseline.
