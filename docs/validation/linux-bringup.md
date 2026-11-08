@@ -30,3 +30,5 @@ Shell-loop speed: 20000 iterations of a busybox `$((i+1))` loop in 2.75 s (an un
 - No persistent storage yet (initramfs only); no SD, Ethernet or PCIe drivers; the LiteEth/MAC choice is still open.
 - Boot needs the host to push the images each time (no flash/SD boot yet).
 - One run, room temperature; no soak test. The 333 MHz timing margin is 10 ps.
+
+Update 2026-11-08: the default SoC is now the coherent netlist with a 128 KiB L2 (`vv_l2e128`); the Linux image, device tree and boot flow are unchanged. See docs/decisions/0006-l2-cache.md.

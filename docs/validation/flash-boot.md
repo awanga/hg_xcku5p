@@ -23,3 +23,10 @@ Goal: the FPGA configures itself from the QSPI flash at power-up/PROG_B, with no
 1. `vivado -mode batch -source fpga/scripts/flash_bit.tcl -tclargs <routed.dcp> <out.bit>`
 2. `openFPGALoader --cable ft232 --freq 3000000 --fpga-part xcku5p-ffvb676 -f --verify --unprotect-flash <out.bit>`
 3. Power-cycle, or `openFPGALoader --cable ft232 -r` to reconfigure.
+
+## Default SoC in flash (2026-11-08)
+After the owner adopted the coherent SoC with a 128 KiB L2 (docs/decisions/0006-l2-cache.md), the flash was rewritten with `vv_l2e128`
+(`soc_top_postroute_physopt.dcp`, WNS +0.020, WHS +0.010) through `flash_bit.tcl`: 7.4 MB, erase + write + verify passed.
+Check: after loading the older vv_fan2 by JTAG, `openFPGALoader -r` brought up a design in which the DDRHALF register (0xF8001024, present only in the d8g1/L2 builds) reads back 1.
+Cold power-up of this image has not been checked yet.
+
