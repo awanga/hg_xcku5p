@@ -56,7 +56,7 @@ generate_target all [get_ips]
 set liteeth $root/build/liteeth/gateware/liteeth_core.v
 if {![file exists $liteeth]} { error "missing $liteeth: run fpga/scripts/gen_liteeth.sh" }
 add_files [list $root/fpga/rtl/soc_top.v $root/fpga/rtl/axil_simple.v $root/fpga/rtl/boot_rom.v \
-    $root/fpga/rtl/soc_regs.v $root/fpga/rtl/spi_sifive.v $root/fpga/rtl/eth_addr_map.v $root/fpga/rtl/irq_pulse.v $root/fpga/rtl/irq_sync.v $root/fpga/rtl/gmii_rx_reg.v $root/fpga/rtl/drp_reader.v $root/fpga/rtl/ddr_halfmap.v $root/fpga/rtl/clk_freq_meter.v $root/fpga/rtl/vexii_ram.v $root/build/soc/$soc/$soc.v \
+    $root/fpga/rtl/soc_regs.v $root/fpga/rtl/spi_sifive.v $root/fpga/rtl/eth_addr_map.v $root/fpga/rtl/irq_pulse.v $root/fpga/rtl/irq_sync.v $root/fpga/rtl/gmii_rx_reg.v $root/fpga/rtl/drp_reader.v $root/fpga/rtl/ddr_halfmap.v $root/fpga/rtl/irq_hold.v $root/fpga/rtl/clk_freq_meter.v $root/fpga/rtl/vexii_ram.v $root/build/soc/$soc/$soc.v \
     $liteeth]
 add_files -fileset constrs_1 [list $root/fpga/constraints/ddr4_pins.xdc $root/fpga/constraints/bringup_board.xdc \
     $root/fpga/constraints/soc_board.xdc]

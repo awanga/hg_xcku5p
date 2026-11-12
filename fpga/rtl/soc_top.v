@@ -111,7 +111,7 @@ module soc_top #(
     wire [3:0]  p_wstrb;
     wire [1:0]  p_bresp, p_rresp;
 
-    wire        uart_irq;
+    wire        uart_irq_pulse, uart_irq;
     wire        spi_irq_level, spi_irq;
     wire        eth_irq;
     // The peripheral interrupts come from per_clk; synchronize them into the CPU clock before they reach the PLIC gateways.
@@ -285,13 +285,18 @@ ddr4_0 u_ddr4 (
         .m_axi_rdata(x_rdata), .m_axi_rresp(x_rresp), .m_axi_rvalid(x_rvalid), .m_axi_rready(x_rready));
 
     uart_0 u_uart (
-        .s_axi_aclk(per_clk), .s_axi_aresetn(per_rst_n), .interrupt(uart_irq),
+        .s_axi_aclk(per_clk), .s_axi_aresetn(per_rst_n), .interrupt(uart_irq_pulse),
         .s_axi_awaddr(x_awaddr[3:0]), .s_axi_awvalid(x_awvalid[0]), .s_axi_awready(x_awready[0]),
         .s_axi_wdata(x_wdata[31:0]), .s_axi_wstrb(x_wstrb[3:0]), .s_axi_wvalid(x_wvalid[0]), .s_axi_wready(x_wready[0]),
         .s_axi_bresp(x_bresp[1:0]), .s_axi_bvalid(x_bvalid[0]), .s_axi_bready(x_bready[0]),
         .s_axi_araddr(x_araddr[3:0]), .s_axi_arvalid(x_arvalid[0]), .s_axi_arready(x_arready[0]),
         .s_axi_rdata(x_rdata[31:0]), .s_axi_rresp(x_rresp[1:0]), .s_axi_rvalid(x_rvalid[0]), .s_axi_rready(x_rready[0]),
         .rx(uart_rx), .tx(uart_tx));
+
+    // The UART Lite interrupt is a one-cycle pulse; hold it until the CPU reads the status or receive register (irq_hold.v).
+    // Offsets: 0x0 RX FIFO, 0x8 status.
+    irq_hold u_uart_irq_hold (.clk(per_clk), .rst_n(per_rst_n), .pulse(uart_irq_pulse),
+        .clr(x_arvalid[0] & x_arready[0] & ~x_araddr[2]), .level(uart_irq));
 
     wire [11:0] rg_addr;
     wire        rg_we, rg_re;

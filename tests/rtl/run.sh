@@ -238,5 +238,17 @@ run_ip mut_dhm_all "$b/mut_dhm_all.v" FAIL
 sed 's/{sel & (addr\[29:28\] == 2.b11), addr}/{sel \& (addr[29:28] == 2'"'"'b11), addr[28:0], addr[29]}/' "$dhm" >"$b/mut_dhm_rot.v"
 cmp -s "$dhm" "$b/mut_dhm_rot.v" && { echo "FAIL mutant dhm_rot unchanged"; fail=1; }
 run_ip mut_dhm_rot "$b/mut_dhm_rot.v" FAIL
+# irq_hold
+ihd=$here/fpga/rtl/irq_hold.v
+tbi=$here/tests/rtl/tb_irq_hold.v
+verilator --lint-only -Wall -Wno-DECLFILENAME "$ihd" >"$b/lint_ihd.log" 2>&1 && echo "PASS lint irq_hold" || {
+	echo "FAIL lint irq_hold"; head "$b/lint_ihd.log"; fail=1; }
+run_ip irq_hold "$ihd" PASS
+sed 's/else if (clr) level <= 1.b0;//' "$ihd" >"$b/mut_ihd_noclr.v"
+cmp -s "$ihd" "$b/mut_ihd_noclr.v" && { echo "FAIL mutant ihd_noclr unchanged"; fail=1; }
+run_ip mut_ihd_noclr "$b/mut_ihd_noclr.v" FAIL
+sed 's/else if (clr) level <= 1.b0;/else level <= 1'"'"'b0;/' "$ihd" >"$b/mut_ihd_pass.v"
+cmp -s "$ihd" "$b/mut_ihd_pass.v" && { echo "FAIL mutant ihd_pass unchanged"; fail=1; }
+run_ip mut_ihd_pass "$b/mut_ihd_pass.v" FAIL
 [ "$fail" = 0 ] && echo "ALL PASS" || echo "FAILURES"
 exit "$fail"
