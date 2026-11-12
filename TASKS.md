@@ -7,7 +7,7 @@
 - Decision: no self-hosted CI runner; Vivado + hardware jobs run locally; hosted GitHub Actions only for non-licensed checks.
   Reason: user direction. Status: README/AGENTS/TASKS updated.
 - Decision: default SoC = coherency hub + 128 KiB 4-way L2 in UltraRAM (soc_l2u_128k_w4, fpga/scripts/cpu/gen_default_soc.sh), owner-approved 2026-11-08.
-  Reason: gzip 1.55x, shell 1.28x under Linux, timing met. Status: docs/decisions/0006-l2-cache.md; vv_l2e128 (WNS +0.020, WHS +0.010) is the reference bitstream and is in the config flash (verified, cold power-up boots).
+  Reason: gzip 1.55x, shell 1.28x under Linux, timing met. Status: docs/decisions/0006-l2-cache.md; vv_l2e128 (WNS +0.020, WHS +0.010) is the L2 reference; the config flash now holds vv_io2 (L2 + LED/key/I2C, WNS +0.008).
 - Decision: board memory/flash (owner-stated, NOT yet schematic-verified): config flash MT25QU256ABA1EW9-0SIT;
   DDR4 2 x MT40A256M16GE-075E, 32-bit bus (1 GiB). Status: recorded in docs/hardware/board-inventory.md.
 - Status: Vivado 2026.1 works for xcku5p-ffvb676-2-i with the free license (scripts/check-env.sh PASS: synth, place, route, bitstream

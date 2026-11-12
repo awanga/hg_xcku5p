@@ -265,5 +265,31 @@ run_ip mut_ihd_noclr "$b/mut_ihd_noclr.v" FAIL
 sed 's/else if (clr) level <= 1.b0;/else level <= 1'"'"'b0;/' "$ihd" >"$b/mut_ihd_pass.v"
 cmp -s "$ihd" "$b/mut_ihd_pass.v" && { echo "FAIL mutant ihd_pass unchanged"; fail=1; }
 run_ip mut_ihd_pass "$b/mut_ihd_pass.v" FAIL
+# eth_dma
+edm=$here/fpga/rtl/eth_dma.v
+tbi=$here/tests/rtl/tb_eth_dma.v
+verilator --lint-only -Wall -Wno-DECLFILENAME "$edm" "$here/fpga/rtl/axil_simple.v" >"$b/lint_edm.log" 2>&1 && echo "PASS lint eth_dma" || {
+	echo "FAIL lint eth_dma"; head "$b/lint_edm.log"; fail=1; }
+run_dma() { # name dut expect
+	iverilog -g2005 -o "$b/$1.vvp" "$tbi" "$2" "$here/fpga/rtl/axil_simple.v" >"$b/$1.build.log" 2>&1 || { echo "FAIL $1 (build)"; fail=1; return; }
+	timeout 250 vvp "$b/$1.vvp" >"$b/$1.log" 2>&1
+	grep -q "TBRESULT.* $3\$" "$b/$1.log" && echo "PASS $1 [icarus, expect $3]" || { echo "FAIL $1 [expected $3]"; grep -E 'TBRESULT|FAIL' "$b/$1.log" | head -3; fail=1; }
+}
+run_dma eth_dma "$edm" PASS
+verilator --binary --timing -Wno-fatal -Wno-DECLFILENAME --top-module tb_eth_dma --Mdir "$b/vl_edm" "$tbi" "$edm" "$here/fpga/rtl/axil_simple.v" >"$b/vl_edm.build.log" 2>&1 || {
+	echo "FAIL eth_dma (verilator build)"; fail=1; }
+timeout 250 "$b/vl_edm/Vtb_eth_dma" >"$b/vl_edm.log" 2>&1
+grep -q "TBRESULT.* PASS\$" "$b/vl_edm.log" && echo "PASS eth_dma [verilator]" || { echo "FAIL eth_dma [verilator]"; fail=1; }
+mut_dma() { # name sed-expression
+	sed "$2" "$edm" >"$b/mut_$1.v"
+	cmp -s "$edm" "$b/mut_$1.v" && { echo "FAIL mutant $1 unchanged"; fail=1; }
+	run_dma "mut_$1" "$b/mut_$1.v" FAIL
+}
+mut_dma edm_flush "s/(pos == 3.d7)/(pos == 3'd6)/"
+mut_dma edm_arinc "s/m_araddr + 32.d4/m_araddr + 32'd8/"
+mut_dma edm_bresp "s/if (m_bresp != 2.b00) begin/if (1'b0) begin/"
+mut_dma edm_awinc "s/m_awaddr + 32.d8/m_awaddr + 32'd4/"
+mut_dma edm_ien "s/assign irq = done \& ien;/assign irq = done;/"
+mut_dma edm_busy "s/if (reg_we \&\& !busy \&\& reg_wstrb\[0\])/if (reg_we \&\& reg_wstrb[0])/"
 [ "$fail" = 0 ] && echo "ALL PASS" || echo "FAILURES"
 exit "$fail"
