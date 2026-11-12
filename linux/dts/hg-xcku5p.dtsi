@@ -67,6 +67,37 @@
 		pulses-per-revolution = <2>;
 	};
 
+	/* LED0-LED7 on the board: red, active high, off by default */
+	leds {
+		compatible = "gpio-leds";
+		led0 { label = "led0"; gpios = <&gpio 3 0>; default-state = "off"; };
+		led1 { label = "led1"; gpios = <&gpio 4 0>; default-state = "off"; };
+		led2 { label = "led2"; gpios = <&gpio 5 0>; default-state = "off"; };
+		led3 { label = "led3"; gpios = <&gpio 6 0>; default-state = "off"; };
+		led4 { label = "led4"; gpios = <&gpio 7 0>; default-state = "off"; };
+		led5 { label = "led5"; gpios = <&gpio 8 0>; default-state = "off"; };
+		led6 { label = "led6"; gpios = <&gpio 9 0>; default-state = "off"; };
+		led7 { label = "led7"; gpios = <&gpio 10 0>; default-state = "off"; };
+	};
+
+	/*
+	 * Pushbuttons K1-K4 (KEY_1..KEY_4, active high) and DIP switches SW1-SW4 (reported as BTN_0..BTN_3 while the switch reads 1).
+	 * K1 is also the SoC reset: pressing it resets the DDR4 controller and holds the CPU in reset, so Linux only ever sees it released.
+	 * Polled every 20 ms, which also debounces.
+	 */
+	keys {
+		compatible = "gpio-keys-polled";
+		poll-interval = <20>;
+		key-k1 { label = "K1"; gpios = <&gpio 11 0>; linux,code = <2>; };
+		key-k2 { label = "K2"; gpios = <&gpio 12 0>; linux,code = <3>; };
+		key-k3 { label = "K3"; gpios = <&gpio 13 0>; linux,code = <4>; };
+		key-k4 { label = "K4"; gpios = <&gpio 14 0>; linux,code = <5>; };
+		sw1 { label = "SW1"; gpios = <&gpio 15 0>; linux,code = <0x100>; };
+		sw2 { label = "SW2"; gpios = <&gpio 16 0>; linux,code = <0x101>; };
+		sw3 { label = "SW3"; gpios = <&gpio 17 0>; linux,code = <0x102>; };
+		sw4 { label = "SW4"; gpios = <&gpio 18 0>; linux,code = <0x103>; };
+	};
+
 	memory@40000000 {
 		device_type = "memory";
 		reg = <0x40000000 0x40000000>;
@@ -134,7 +165,10 @@
 			};
 		};
 
-		/* AXI GPIO: 0 DS18B20 1-Wire (open drain, 4.7 k pull-up on the board), 1 buzzer (active high), 2 fan tach input */
+		/*
+		 * AXI GPIO: 0 DS18B20 1-Wire (open drain, 4.7 k pull-up on the board), 1 buzzer (active high), 2 fan tach input,
+		 * 3-10 LED0-7 (active high), 11-14 KEY_PL0-3 (active high), 15-18 SW1-4 (fpga/rtl/board_gpio_map.v)
+		 */
 		gpio: gpio@f8003000 {
 			compatible = "xlnx,xps-gpio-1.00.a";
 			reg = <0xf8003000 0x1000>;
@@ -144,13 +178,39 @@
 			#interrupt-cells = <2>;
 			gpio-controller;
 			#gpio-cells = <2>;
-			xlnx,gpio-width = <3>;
+			xlnx,gpio-width = <19>;
 			xlnx,is-dual = <0>;
 			xlnx,all-inputs = <0>;
 			xlnx,all-outputs = <0>;
 			xlnx,dout-default = <0>;
 			xlnx,tri-default = <0xffffffff>;
 			xlnx,interrupt-present = <1>;
+		};
+
+		/*
+		 * AXI IIC masters (100 kHz). i2c0 = PL_I2C with a BL24C02 (address strap not read; the bus is scanned first). i2c1 = the second
+		 * bus with two BL24C256. No EEPROM nodes are declared: the buses are scanned read-only first and any at24 node added later is marked read-only.
+		 */
+		i2c0: i2c@f8006000 {
+			compatible = "xlnx,xps-iic-2.00.a";
+			reg = <0xf8006000 0x1000>;
+			interrupt-parent = <&plic>;
+			interrupts = <6>;
+			clocks = <&per_clk>;
+			clock-names = "pclk";
+			#address-cells = <1>;
+			#size-cells = <0>;
+		};
+
+		i2c1: i2c@f8007000 {
+			compatible = "xlnx,xps-iic-2.00.a";
+			reg = <0xf8007000 0x1000>;
+			interrupt-parent = <&plic>;
+			interrupts = <7>;
+			clocks = <&per_clk>;
+			clock-names = "pclk";
+			#address-cells = <1>;
+			#size-cells = <0>;
 		};
 
 		/* AXI Timer in PWM mode; fpga/rtl/soc_top.v inverts its output for the fan's NMOS driver, so the fan sees this duty directly */

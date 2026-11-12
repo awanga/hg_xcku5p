@@ -87,3 +87,24 @@ set_property IOSTANDARD LVCMOS18 [get_ports {fan_pwm fan_fb}]
 # All of these are slow (<= 25 MHz SPI, kHz PWM and tach, microsecond 1-Wire timing) and generated from or sampled by per_clk logic.
 set_false_path -from [get_ports {ms_miso ds18b20_io fan_fb}]
 set_false_path -to [get_ports {ms_sclk ms_mosi ms_cs_n ds18b20_io beep fan_pwm}]
+
+# Keys K2-K4 (KEY_PL1-3; K1 = key_rst) and DIP switches SW1-SW4: inputs in bank 65 (1.2 V), read by software, no timing relation to any clock.
+set_property PACKAGE_PIN N22 [get_ports {key_k[1]}]
+set_property PACKAGE_PIN N21 [get_ports {key_k[2]}]
+set_property PACKAGE_PIN P19 [get_ports {key_k[3]}]
+set_property PACKAGE_PIN N19 [get_ports {sw[0]}]
+set_property PACKAGE_PIN N23 [get_ports {sw[1]}]
+set_property PACKAGE_PIN R21 [get_ports {sw[2]}]
+set_property PACKAGE_PIN R20 [get_ports {sw[3]}]
+set_property IOSTANDARD LVCMOS12 [get_ports {key_k[*] sw[*]}]
+set_false_path -from [get_ports {key_k[*] sw[*]}]
+
+# I2C (open drain, board pull-ups, 100 kHz from per_clk). PL_I2C (BL24C02) in bank 84, second bus (2 x BL24C256) in bank 86, both 3.3 V.
+# The second bus pin order (A9 = SCL, B9 = SDA) was read from the schematic image and is confirmed by an i2cdetect on the board.
+set_property PACKAGE_PIN AB14 [get_ports i2c0_scl]
+set_property PACKAGE_PIN W16 [get_ports i2c0_sda]
+set_property PACKAGE_PIN A9 [get_ports i2c1_scl]
+set_property PACKAGE_PIN B9 [get_ports i2c1_sda]
+set_property IOSTANDARD LVCMOS33 [get_ports {i2c0_scl i2c0_sda i2c1_scl i2c1_sda}]
+set_false_path -from [get_ports {i2c0_scl i2c0_sda i2c1_scl i2c1_sda}]
+set_false_path -to [get_ports {i2c0_scl i2c0_sda i2c1_scl i2c1_sda}]

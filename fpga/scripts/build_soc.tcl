@@ -35,7 +35,7 @@ set_property -dict [list \
 create_ip -name axi_clock_converter -vendor xilinx.com -library ip -module_name cc_per
 set_property -dict [list CONFIG.PROTOCOL AXI4LITE CONFIG.DATA_WIDTH 32 CONFIG.ADDR_WIDTH 32 CONFIG.ACLK_ASYNC 1] [get_ips cc_per]
 create_ip -name axi_crossbar -vendor xilinx.com -library ip -module_name xbar_per
-set_property -dict [list CONFIG.PROTOCOL AXI4LITE CONFIG.NUM_SI 1 CONFIG.NUM_MI 8 CONFIG.ADDR_WIDTH 32 CONFIG.DATA_WIDTH 32 \
+set_property -dict [list CONFIG.PROTOCOL AXI4LITE CONFIG.NUM_SI 1 CONFIG.NUM_MI 10 CONFIG.ADDR_WIDTH 32 CONFIG.DATA_WIDTH 32 \
     CONFIG.M00_A00_BASE_ADDR 0x00000000F8000000 CONFIG.M00_A00_ADDR_WIDTH 12 \
     CONFIG.M01_A00_BASE_ADDR 0x00000000F8001000 CONFIG.M01_A00_ADDR_WIDTH 12 \
     CONFIG.M02_A00_BASE_ADDR 0x0000000010000000 CONFIG.M02_A00_ADDR_WIDTH 16 \
@@ -43,20 +43,24 @@ set_property -dict [list CONFIG.PROTOCOL AXI4LITE CONFIG.NUM_SI 1 CONFIG.NUM_MI 
     CONFIG.M04_A00_BASE_ADDR 0x00000000F8008000 CONFIG.M04_A00_ADDR_WIDTH 15 \
     CONFIG.M05_A00_BASE_ADDR 0x00000000F8003000 CONFIG.M05_A00_ADDR_WIDTH 12 \
     CONFIG.M06_A00_BASE_ADDR 0x00000000F8004000 CONFIG.M06_A00_ADDR_WIDTH 12 \
-    CONFIG.M07_A00_BASE_ADDR 0x00000000F8005000 CONFIG.M07_A00_ADDR_WIDTH 12] [get_ips xbar_per]
+    CONFIG.M07_A00_BASE_ADDR 0x00000000F8005000 CONFIG.M07_A00_ADDR_WIDTH 12 \
+    CONFIG.M08_A00_BASE_ADDR 0x00000000F8006000 CONFIG.M08_A00_ADDR_WIDTH 12 \
+    CONFIG.M09_A00_BASE_ADDR 0x00000000F8007000 CONFIG.M09_A00_ADDR_WIDTH 12] [get_ips xbar_per]
 create_ip -name axi_uartlite -vendor xilinx.com -library ip -module_name uart_0
 set_property -dict [list CONFIG.C_BAUDRATE 230400 CONFIG.C_S_AXI_ACLK_FREQ_HZ 100000000] [get_ips uart_0]
 # AXI GPIO (DS18B20 1-Wire, buzzer, fan tach) and AXI Timer (fan PWM): both have upstream Linux drivers (gpio-xilinx, pwm-xilinx).
 create_ip -name axi_gpio -vendor xilinx.com -library ip -module_name gpio_0
-set_property -dict [list CONFIG.C_GPIO_WIDTH 3 CONFIG.C_ALL_INPUTS 0 CONFIG.C_ALL_OUTPUTS 0 CONFIG.C_INTERRUPT_PRESENT 1 \
+set_property -dict [list CONFIG.C_GPIO_WIDTH 19 CONFIG.C_ALL_INPUTS 0 CONFIG.C_ALL_OUTPUTS 0 CONFIG.C_INTERRUPT_PRESENT 1 \
     CONFIG.C_DOUT_DEFAULT 0x00000000 CONFIG.C_TRI_DEFAULT 0xFFFFFFFF] [get_ips gpio_0]
 create_ip -name axi_timer -vendor xilinx.com -library ip -module_name tmr_0
+create_ip -name axi_iic -vendor xilinx.com -library ip -module_name iic_0
+set_property -dict [list CONFIG.AXI_ACLK_FREQ_MHZ 100 CONFIG.IIC_FREQ_KHZ 100] [get_ips iic_0]
 generate_target all [get_ips]
 
 set liteeth $root/build/liteeth/gateware/liteeth_core.v
 if {![file exists $liteeth]} { error "missing $liteeth: run fpga/scripts/gen_liteeth.sh" }
 add_files [list $root/fpga/rtl/soc_top.v $root/fpga/rtl/axil_simple.v $root/fpga/rtl/boot_rom.v \
-    $root/fpga/rtl/soc_regs.v $root/fpga/rtl/spi_sifive.v $root/fpga/rtl/eth_addr_map.v $root/fpga/rtl/irq_pulse.v $root/fpga/rtl/irq_sync.v $root/fpga/rtl/gmii_rx_reg.v $root/fpga/rtl/drp_reader.v $root/fpga/rtl/ddr_halfmap.v $root/fpga/rtl/irq_hold.v $root/fpga/rtl/clk_freq_meter.v $root/fpga/rtl/vexii_ram.v $root/build/soc/$soc/$soc.v \
+    $root/fpga/rtl/soc_regs.v $root/fpga/rtl/spi_sifive.v $root/fpga/rtl/eth_addr_map.v $root/fpga/rtl/irq_pulse.v $root/fpga/rtl/irq_sync.v $root/fpga/rtl/gmii_rx_reg.v $root/fpga/rtl/drp_reader.v $root/fpga/rtl/ddr_halfmap.v $root/fpga/rtl/board_gpio_map.v $root/fpga/rtl/irq_hold.v $root/fpga/rtl/clk_freq_meter.v $root/fpga/rtl/vexii_ram.v $root/build/soc/$soc/$soc.v \
     $liteeth]
 add_files -fileset constrs_1 [list $root/fpga/constraints/ddr4_pins.xdc $root/fpga/constraints/bringup_board.xdc \
     $root/fpga/constraints/soc_board.xdc]
@@ -96,4 +100,8 @@ report_clock_utilization -file $outdir/impl_clocks.rpt
 report_clock_interaction -file $outdir/impl_clock_interaction.rpt
 puts "WNS [get_property SLACK [get_timing_paths -max_paths 1 -nworst 1]]"
 if {$upto eq "bit"} { write_bitstream -force $outdir/soc.bit }
+# Archive a summary (tool version, source commit, WNS/WHS, utilization, DRC) next to the reports; slack is only reported here,
+# tools/build_report.py without the flag is the pass/fail gate.
+catch {exec python3 $root/tools/build_report.py $outdir --allow-negative-slack} rep
+puts "REPORT $rep"
 puts "BUILD_DONE $upto"

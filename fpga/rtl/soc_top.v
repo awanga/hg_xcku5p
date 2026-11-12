@@ -33,6 +33,8 @@ module soc_top #(
     inout  wire [3:0]  c0_ddr4_dqs_c,
     input  wire        key_rst,
     output wire [7:0]  led,
+    input  wire [3:1]  key_k,  // KEY_PL1-3 (KEY_PL0 is key_rst), bank 65, 1.2 V
+    input  wire [3:0]  sw,     // SW1-SW4 DIP switches, bank 65, 1.2 V
     output wire        uart_tx,
     input  wire        uart_rx,
     output wire        sd_clk,
@@ -48,6 +50,11 @@ module soc_top #(
     output wire        beep,
     output wire        fan_pwm,
     input  wire        fan_fb,
+    // I2C buses with board pull-ups (bank 84 and bank 86, both 3.3 V): PL_I2C (BL24C02) and the second bus (2 x BL24C256)
+    inout  wire        i2c0_scl,
+    inout  wire        i2c0_sda,
+    inout  wire        i2c1_scl,
+    inout  wire        i2c1_sda,
     // RTL8211EG in GMII mode (bank 87, 3.3 V). MDC/MDIO/INT/COL/CRS have no FPGA pin.
     input  wire        eth_rx_clk,
     output wire        eth_gtx_clk,
@@ -117,9 +124,10 @@ module soc_top #(
     // The peripheral interrupts come from per_clk; synchronize them into the CPU clock before they reach the PLIC gateways.
     // PLIC sources: 1 UART lite, 2 SPI (SD), 3 LiteEth, 4 SPI (MS5611), 5 GPIO.
     wire        spi1_irq_level, spi1_irq, gpio_irq;
-    wire [4:0]  irq_sync_q;
-    irq_sync #(.W(5)) u_irq_sync (.clk(cpu_clk), .d({gpio_irq, spi1_irq, eth_irq, spi_irq, uart_irq}), .q(irq_sync_q));
-    wire [31:0] irq = {26'd0, irq_sync_q, 1'b0};
+    wire [6:0]  irq_sync_q;
+    wire        i2c0_irq, i2c1_irq;
+    irq_sync #(.W(7)) u_irq_sync (.clk(cpu_clk), .d({i2c1_irq, i2c0_irq, gpio_irq, spi1_irq, eth_irq, spi_irq, uart_irq}), .q(irq_sync_q));
+    wire [31:0] irq = {24'd0, irq_sync_q, 1'b0};
 
 `ifdef WITH_DMA
     wire        dma_awready, dma_wready, dma_bvalid, dma_arready, dma_rvalid;
@@ -263,13 +271,14 @@ ddr4_0 u_ddr4 (
         .m_axi_rdata(q_rdata), .m_axi_rresp(q_rresp), .m_axi_rvalid(q_rvalid), .m_axi_rready(q_rready));
 
     // crossbar masters: 0 UART lite, 1 board regs, 2 boot ROM, 3 SPI (SD card), 4 LiteEth (window 0xF8008000, 32 KiB, remapped below),
-    // 5 AXI GPIO 0xF8003000, 6 AXI Timer (PWM) 0xF8004000, 7 SPI (MS5611) 0xF8005000
-    wire [255:0] x_awaddr, x_araddr, x_wdata, x_rdata;
-    wire [23:0] x_awprot, x_arprot;
-    wire [31:0] x_wstrb;
-    wire [15:0] x_bresp, x_rresp;
-    wire [7:0]  x_awvalid, x_awready, x_wvalid, x_wready, x_bvalid, x_bready;
-    wire [7:0]  x_arvalid, x_arready, x_rvalid, x_rready;
+    // 5 AXI GPIO 0xF8003000, 6 AXI Timer (PWM) 0xF8004000, 7 SPI (MS5611) 0xF8005000,
+    // 8 AXI IIC (PL_I2C) 0xF8006000, 9 AXI IIC (second bus) 0xF8007000
+    wire [319:0] x_awaddr, x_araddr, x_wdata, x_rdata;
+    wire [29:0] x_awprot, x_arprot;
+    wire [39:0] x_wstrb;
+    wire [19:0] x_bresp, x_rresp;
+    wire [9:0]  x_awvalid, x_awready, x_wvalid, x_wready, x_bvalid, x_bready;
+    wire [9:0]  x_arvalid, x_arready, x_rvalid, x_rready;
 
     xbar_per u_xbar (
         .aclk(per_clk), .aresetn(per_rst_n),
@@ -293,6 +302,8 @@ ddr4_0 u_ddr4 (
         .s_axi_rdata(x_rdata[31:0]), .s_axi_rresp(x_rresp[1:0]), .s_axi_rvalid(x_rvalid[0]), .s_axi_rready(x_rready[0]),
         .rx(uart_rx), .tx(uart_tx));
 
+    wire [7:0]  rg_led, gpio_led;
+    assign led = rg_led | gpio_led;
     // The UART Lite interrupt is a one-cycle pulse; hold it until the CPU reads the status or receive register (irq_hold.v).
     // Offsets: 0x0 RX FIFO, 0x8 status.
     irq_hold u_uart_irq_hold (.clk(per_clk), .rst_n(per_rst_n), .pulse(uart_irq_pulse),
@@ -312,7 +323,7 @@ ddr4_0 u_ddr4 (
         .addr(rg_addr), .we(rg_we), .wdata(rg_wdata), .wstrb(rg_wstrb), .re(rg_re), .rdata(rg_rdata));
     soc_regs #(.CPU_KHZ(CPU_KHZ)) u_regs (
         .clk(per_clk), .rst_n(per_rst_n), .we(rg_we), .addr(rg_addr[5:2]), .wdata(rg_wdata), .wstrb(rg_wstrb),
-        .re(rg_re), .rdata(rg_rdata), .led(led), .key_in(key_rst), .ddr_calib_in(calib), .ddr_rst_n_in(ui_rst_n),
+        .re(rg_re), .rdata(rg_rdata), .led(rg_led), .key_in(key_rst), .ddr_calib_in(calib), .ddr_rst_n_in(ui_rst_n),
         .eth_rst_n_in(eth_rst_n), .eth_clk_count_in(eth_clk_count), .die_temp_in(die_temp), .ddr_half(ddr_half));
     wire [31:0] eth_clk_count;
 
@@ -361,8 +372,10 @@ ddr4_0 u_ddr4 (
         .irq(spi_irq_level), .sck(sd_clk), .mosi(sd_cmd), .miso(sd_dat0), .cs_n(sd_dat3));
 
     // ---------------------------------------------------------------- small peripherals
-    // GPIO bits: 0 DS18B20 data (open drain: the board has a 4.7 k pull-up), 1 buzzer (active high), 2 fan tach input.
-    wire [2:0] gpio_i, gpio_o, gpio_t;
+    // GPIO bits (board_gpio_map.v): 0 DS18B20 data (open drain: the board has a 4.7 k pull-up), 1 buzzer (active high), 2 fan tach input,
+    // 3-10 LED0-7, 11-14 KEY_PL0-3, 15-18 SW1-4.
+    wire [18:0] gpio_i, gpio_o, gpio_t;
+    wire        ds18b20_i;
     gpio_0 u_gpio (
         .s_axi_aclk(per_clk), .s_axi_aresetn(per_rst_n),
         .s_axi_awaddr(x_awaddr[168:160]), .s_axi_awvalid(x_awvalid[5]), .s_axi_awready(x_awready[5]),
@@ -371,10 +384,9 @@ ddr4_0 u_ddr4 (
         .s_axi_araddr(x_araddr[168:160]), .s_axi_arvalid(x_arvalid[5]), .s_axi_arready(x_arready[5]),
         .s_axi_rdata(x_rdata[191:160]), .s_axi_rresp(x_rresp[11:10]), .s_axi_rvalid(x_rvalid[5]), .s_axi_rready(x_rready[5]),
         .ip2intc_irpt(gpio_irq), .gpio_io_i(gpio_i), .gpio_io_o(gpio_o), .gpio_io_t(gpio_t));
-    IOBUF u_ds18b20_iobuf (.I(gpio_o[0]), .T(gpio_t[0]), .O(gpio_i[0]), .IO(ds18b20_io));
-    assign beep = gpio_o[1] & ~gpio_t[1];
-    assign gpio_i[1] = beep;
-    assign gpio_i[2] = fan_fb;
+    IOBUF u_ds18b20_iobuf (.I(gpio_o[0]), .T(gpio_t[0]), .O(ds18b20_i), .IO(ds18b20_io));
+    board_gpio_map u_gpio_map (.gpio_o(gpio_o), .gpio_t(gpio_t), .ds18b20_i(ds18b20_i), .fan_fb(fan_fb),
+        .key({key_k, key_rst}), .sw(sw), .gpio_i(gpio_i), .beep(beep), .led(gpio_led));
 
     // The fan's PWM wire is pulled up inside the fan and the board inverts it with an NMOS (Q9): a high pin pulls the fan's PWM line low.
     // pwm-xilinx cannot invert, so the pin is the inverse of the timer's PWM output: line duty = timer duty (0 = fan at its minimum).
@@ -389,6 +401,30 @@ ddr4_0 u_ddr4 (
         .s_axi_rdata(x_rdata[223:192]), .s_axi_rresp(x_rresp[13:12]), .s_axi_rvalid(x_rvalid[6]), .s_axi_rready(x_rready[6]),
         .capturetrig0(1'b0), .capturetrig1(1'b0), .freeze(1'b0),
         .generateout0(tmr_generateout0), .generateout1(tmr_generateout1), .pwm0(tmr_pwm0), .interrupt(tmr_irq));
+
+    // I2C masters (AXI IIC, 100 kHz default; Linux i2c-xiic). Open-drain: the line is driven low only when the IP's t output is 0.
+    wire i2c0_scl_i, i2c0_scl_o, i2c0_scl_t, i2c0_sda_i, i2c0_sda_o, i2c0_sda_t;
+    wire i2c1_scl_i, i2c1_scl_o, i2c1_scl_t, i2c1_sda_i, i2c1_sda_o, i2c1_sda_t;
+    iic_0 u_i2c0 (
+        .s_axi_aclk(per_clk), .s_axi_aresetn(per_rst_n), .iic2intc_irpt(i2c0_irq),
+        .s_axi_awaddr(x_awaddr[264:256]), .s_axi_awvalid(x_awvalid[8]), .s_axi_awready(x_awready[8]),
+        .s_axi_wdata(x_wdata[287:256]), .s_axi_wstrb(x_wstrb[35:32]), .s_axi_wvalid(x_wvalid[8]), .s_axi_wready(x_wready[8]),
+        .s_axi_bresp(x_bresp[17:16]), .s_axi_bvalid(x_bvalid[8]), .s_axi_bready(x_bready[8]),
+        .s_axi_araddr(x_araddr[264:256]), .s_axi_arvalid(x_arvalid[8]), .s_axi_arready(x_arready[8]),
+        .s_axi_rdata(x_rdata[287:256]), .s_axi_rresp(x_rresp[17:16]), .s_axi_rvalid(x_rvalid[8]), .s_axi_rready(x_rready[8]),
+        .sda_i(i2c0_sda_i), .sda_o(i2c0_sda_o), .sda_t(i2c0_sda_t), .scl_i(i2c0_scl_i), .scl_o(i2c0_scl_o), .scl_t(i2c0_scl_t), .gpo());
+    IOBUF u_i2c0_scl (.I(i2c0_scl_o), .T(i2c0_scl_t), .O(i2c0_scl_i), .IO(i2c0_scl));
+    IOBUF u_i2c0_sda (.I(i2c0_sda_o), .T(i2c0_sda_t), .O(i2c0_sda_i), .IO(i2c0_sda));
+    iic_0 u_i2c1 (
+        .s_axi_aclk(per_clk), .s_axi_aresetn(per_rst_n), .iic2intc_irpt(i2c1_irq),
+        .s_axi_awaddr(x_awaddr[296:288]), .s_axi_awvalid(x_awvalid[9]), .s_axi_awready(x_awready[9]),
+        .s_axi_wdata(x_wdata[319:288]), .s_axi_wstrb(x_wstrb[39:36]), .s_axi_wvalid(x_wvalid[9]), .s_axi_wready(x_wready[9]),
+        .s_axi_bresp(x_bresp[19:18]), .s_axi_bvalid(x_bvalid[9]), .s_axi_bready(x_bready[9]),
+        .s_axi_araddr(x_araddr[296:288]), .s_axi_arvalid(x_arvalid[9]), .s_axi_arready(x_arready[9]),
+        .s_axi_rdata(x_rdata[319:288]), .s_axi_rresp(x_rresp[19:18]), .s_axi_rvalid(x_rvalid[9]), .s_axi_rready(x_rready[9]),
+        .sda_i(i2c1_sda_i), .sda_o(i2c1_sda_o), .sda_t(i2c1_sda_t), .scl_i(i2c1_scl_i), .scl_o(i2c1_scl_o), .scl_t(i2c1_scl_t), .gpo());
+    IOBUF u_i2c1_scl (.I(i2c1_scl_o), .T(i2c1_scl_t), .O(i2c1_scl_i), .IO(i2c1_scl));
+    IOBUF u_i2c1_sda (.I(i2c1_sda_o), .T(i2c1_sda_t), .O(i2c1_sda_i), .IO(i2c1_sda));
 
     wire [11:0] sp1_addr;
     wire        sp1_we, sp1_re;

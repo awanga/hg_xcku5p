@@ -238,6 +238,21 @@ run_ip mut_dhm_all "$b/mut_dhm_all.v" FAIL
 sed 's/{sel & (addr\[29:28\] == 2.b11), addr}/{sel \& (addr[29:28] == 2'"'"'b11), addr[28:0], addr[29]}/' "$dhm" >"$b/mut_dhm_rot.v"
 cmp -s "$dhm" "$b/mut_dhm_rot.v" && { echo "FAIL mutant dhm_rot unchanged"; fail=1; }
 run_ip mut_dhm_rot "$b/mut_dhm_rot.v" FAIL
+# board_gpio_map
+bgm=$here/fpga/rtl/board_gpio_map.v
+tbi=$here/tests/rtl/tb_board_gpio_map.v
+verilator --lint-only -Wall -Wno-DECLFILENAME "$bgm" >"$b/lint_bgm.log" 2>&1 && echo "PASS lint board_gpio_map" || {
+	echo "FAIL lint board_gpio_map"; head "$b/lint_bgm.log"; fail=1; }
+run_ip board_gpio_map "$bgm" PASS
+sed 's/assign led = gpio_o\[10:3\] & ~gpio_t\[10:3\];/assign led = gpio_o[10:3];/' "$bgm" >"$b/mut_bgm_tri.v"
+cmp -s "$bgm" "$b/mut_bgm_tri.v" && { echo "FAIL mutant bgm_tri unchanged"; fail=1; }
+run_ip mut_bgm_tri "$b/mut_bgm_tri.v" FAIL
+sed 's/{sw, key, led, fan_fb, beep, ds18b20_i}/{key, sw, led, fan_fb, beep, ds18b20_i}/' "$bgm" >"$b/mut_bgm_swap.v"
+cmp -s "$bgm" "$b/mut_bgm_swap.v" && { echo "FAIL mutant bgm_swap unchanged"; fail=1; }
+run_ip mut_bgm_swap "$b/mut_bgm_swap.v" FAIL
+sed 's/assign beep = gpio_o\[1\] & ~gpio_t\[1\];/assign beep = gpio_o[1];/' "$bgm" >"$b/mut_bgm_beep.v"
+cmp -s "$bgm" "$b/mut_bgm_beep.v" && { echo "FAIL mutant bgm_beep unchanged"; fail=1; }
+run_ip mut_bgm_beep "$b/mut_bgm_beep.v" FAIL
 # irq_hold
 ihd=$here/fpga/rtl/irq_hold.v
 tbi=$here/tests/rtl/tb_irq_hold.v
