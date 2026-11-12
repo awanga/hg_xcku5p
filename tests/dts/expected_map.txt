@@ -1,0 +1,8 @@
+# Expected hardware map: compatible-string-prefix, base address (hex), PLIC source (- for none).
+# Source: docs/validation/soc-minimal.md and the header of fpga/rtl/soc_top.v (not the device tree).
+sifive,clint0 f0010000 -
+sifive,plic-1.0.0 f0c00000 -
+xlnx,xps-uartlite-1.00.a f8000000 1
+xlnx,xps-gpio-1.00.a f8003000 5
+xlnx,xps-timer-1.00.a f8004000 -
+litex,liteeth f8009000 3
