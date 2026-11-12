@@ -24,13 +24,14 @@ Findings
 - `fpga/rtl/drp_reader.v` reads the SYSMON temperature register (address 0, default mode) about every 0.65 ms into board register 0xF8001020
   (`soc_regs.v`); degC = code * 509.3140064 / 65536 - 280.2308787 (SYSMONE4 transfer function from memory; absolute accuracy of a degree or two is unverified).
   First reading 41.5 C with the fan stopped, DS18B20 37 C at the same time; 32 C after a reboot with the fan at full speed.
-- `linux/rootfs/fan-governor` (installed in `/usr/sbin`, started by `/etc/init.d/S04fan`): stopped below 40 C, restarts at 45 C, 77/255 from 45 C rising linearly to 255 at
-  70 C, up at once and down by at most 10 per 2 s cycle; unreadable or implausible reading or the service stopping gives 255. Settings (T_OFF, T_ON, T_MAX, MIN_DUTY, STEP_DOWN, PERIOD)
-  can be set in the environment or `/etc/default/fan-governor`, which is on the read-only root, so changing them needs a new image. `fan-governor -1` runs one cycle and applies it.
+- `linux/rootfs/fan-governor` (installed in `/usr/sbin`, started by `/etc/init.d/S04fan`), policy changed 2026-11-12: stopped below 30 C; 30-45 C quiet ramp 38 -> 61 (15-24 %);
+  45-65 C 77 -> 128 (30-50 %); 65-80 C 128 -> 217 (50-85 %); 80-85 C 217 -> 255; 255 from 85 C. The curve sees a temperature that follows a rise at once and a fall only once it is 4 C below the held value (then
+  it trails the real temperature by 4 C); the duty rises at once and falls by at most 10 per 2 s cycle; an unreadable or implausible reading or the service stopping gives 255. Settings (HYST, STEP_DOWN, PERIOD)
+  can be set in the environment or `/etc/default/fan-governor`, which is on the read-only root, so changing them needs a new image. `fan-governor -1` runs one cycle and applies it (it has no history, so no hysteresis).
 - Board checks: idle sequence over 3 minutes was stopped (41-44 C) -> started at 45 C (2050 rpm at 77) -> cooled to 40 C -> ramped down to stop; `S04fan stop` gave pwm 255 / 6123 rpm;
   a bad temperature register gave 255; killing a governor with shifted thresholds gave 255 (trap); restart ramped down from 255 by 10 per cycle.
-  A fan that cycles on and off every few minutes at idle is the hysteresis working; widen the band or raise MIN_DUTY if that is annoying.
-- Host tests: `tests/rootfs/run.sh` (112 checks against an independent policy model, 5 mutants detected); RTL: `tests/rtl/run.sh` covers drp_reader (3 mutants) and the register.
+  The board checks above are from the earlier policy (stop below 40 C, 77 at 45 C); the new policy is verified on the host only until the next image runs on the board.
+- Host tests: `tests/rootfs/run.sh` (252 checks against an independent policy model, 6 mutants detected); RTL: `tests/rtl/run.sh` covers drp_reader (3 mutants) and the register.
 - Not tested: behaviour at high die temperature (no load that heats the die was run), the thermal framework (no kernel thermal zone: the governor is a userspace service),
   a governor killed with SIGKILL (fan stays at its last duty).
 - Regression: 16/16 boots detect the SD card; Ethernet RX 38.4 Mb/s, 0 CRC errors.
