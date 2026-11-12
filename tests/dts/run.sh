@@ -25,7 +25,7 @@ check_map() { # dtb
 		echo "$node" | grep -qi "0x$base " || { echo "  $comp: base $base not found ($node)"; rc=1; }
 		if [ "$irq" != "-" ]; then
 			awk -v c="\"$comp" 'index($0, c) {f=1} f && /interrupts = </ {print; exit}' "$dts" |
-				grep -Eq "<0x0*$(printf %x "$irq")>" || { echo "  $comp: interrupt $irq not found"; rc=1; }
+				grep -Eq "[< ]0x0*$(printf %x "$irq")[> ]" || { echo "  $comp: interrupt $irq not found"; rc=1; }
 		fi
 	done <"$here/tests/dts/expected_map.txt"
 	return $rc

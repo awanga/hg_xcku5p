@@ -125,16 +125,20 @@ module soc_top #(
     // PLIC sources: 1 UART lite, 2 SPI (SD), 3 LiteEth, 4 SPI (MS5611), 5 GPIO.
     wire        spi1_irq_level, spi1_irq, gpio_irq;
     wire [6:0]  irq_sync_q;
-    wire        i2c0_irq, i2c1_irq;
-    irq_sync #(.W(7)) u_irq_sync (.clk(cpu_clk), .d({i2c1_irq, i2c0_irq, gpio_irq, spi1_irq, eth_irq, spi_irq, uart_irq}), .q(irq_sync_q));
+    wire        i2c0_irq, i2c1_irq, dma_irq;
+    irq_sync #(.W(8)) u_irq_sync (.clk(cpu_clk), .d({dma_irq, i2c1_irq, i2c0_irq, gpio_irq, spi1_irq, eth_irq, spi_irq, uart_irq}), .q(irq_sync_q));
     wire [31:0] irq = {24'd0, irq_sync_q, 1'b0};
 
 `ifdef WITH_DMA
-    wire        dma_awready, dma_wready, dma_bvalid, dma_arready, dma_rvalid;
+    // Hub DMA port, driven by the eth_dma engine through cc_dma (write only; the read channels are tied off).
+    wire        dma_awvalid, dma_awready, dma_wvalid, dma_wready, dma_wlast, dma_bvalid, dma_bready, dma_arready, dma_rvalid, dma_rlast;
+    wire [31:0] dma_awaddr;
+    wire [7:0]  dma_awlen, dma_wstrb;
+    wire [2:0]  dma_awsize;
+    wire [1:0]  dma_awburst;
+    wire [63:0] dma_wdata, dma_rdata;
     wire [3:0]  dma_bid, dma_rid;
     wire [1:0]  dma_bresp, dma_rresp;
-    wire [255:0] dma_rdata;
-    wire        dma_rlast;
 `endif
 
     `SOC_MODULE u_soc (
@@ -155,11 +159,13 @@ module soc_top #(
         .pBus_arvalid(p_arvalid), .pBus_arready(p_arready), .pBus_araddr(p_araddr), .pBus_arprot(p_arprot),
         .pBus_rvalid(p_rvalid), .pBus_rready(p_rready), .pBus_rdata(p_rdata), .pBus_rresp(p_rresp),
 `ifdef WITH_DMA
-        .dma_bus_awvalid(1'b0), .dma_bus_awready(dma_awready), .dma_bus_awaddr(32'd0), .dma_bus_awid(4'd0),
-        .dma_bus_awlen(8'd0), .dma_bus_awsize(3'd0), .dma_bus_awburst(2'd1),
-        .dma_bus_wvalid(1'b0), .dma_bus_wready(dma_wready), .dma_bus_wdata(256'd0), .dma_bus_wstrb(32'd0), .dma_bus_wlast(1'b0),
-        .dma_bus_bvalid(dma_bvalid), .dma_bus_bready(1'b1), .dma_bus_bid(dma_bid), .dma_bus_bresp(dma_bresp),
+        .dma_bus_awvalid(dma_awvalid), .dma_bus_awready(dma_awready), .dma_bus_awaddr(dma_awaddr), .dma_bus_awid(4'd0),
+        .dma_bus_awregion(4'd0), .dma_bus_awlock(1'b0), .dma_bus_awcache(4'd0), .dma_bus_awqos(4'd0), .dma_bus_awprot(3'd0),
+        .dma_bus_awlen(dma_awlen), .dma_bus_awsize(dma_awsize), .dma_bus_awburst(dma_awburst),
+        .dma_bus_wvalid(dma_wvalid), .dma_bus_wready(dma_wready), .dma_bus_wdata(dma_wdata), .dma_bus_wstrb(dma_wstrb), .dma_bus_wlast(dma_wlast),
+        .dma_bus_bvalid(dma_bvalid), .dma_bus_bready(dma_bready), .dma_bus_bid(dma_bid), .dma_bus_bresp(dma_bresp),
         .dma_bus_arvalid(1'b0), .dma_bus_arready(dma_arready), .dma_bus_araddr(32'd0), .dma_bus_arid(4'd0),
+        .dma_bus_arregion(4'd0), .dma_bus_arlock(1'b0), .dma_bus_arcache(4'd0), .dma_bus_arqos(4'd0), .dma_bus_arprot(3'd0),
         .dma_bus_arlen(8'd0), .dma_bus_arsize(3'd0), .dma_bus_arburst(2'd1),
         .dma_bus_rvalid(dma_rvalid), .dma_bus_rready(1'b1), .dma_bus_rdata(dma_rdata), .dma_bus_rid(dma_rid),
         .dma_bus_rresp(dma_rresp), .dma_bus_rlast(dma_rlast),
@@ -270,28 +276,47 @@ ddr4_0 u_ddr4 (
         .m_axi_araddr(q_araddr), .m_axi_arprot(q_arprot), .m_axi_arvalid(q_arvalid), .m_axi_arready(q_arready),
         .m_axi_rdata(q_rdata), .m_axi_rresp(q_rresp), .m_axi_rvalid(q_rvalid), .m_axi_rready(q_rready));
 
-    // crossbar masters: 0 UART lite, 1 board regs, 2 boot ROM, 3 SPI (SD card), 4 LiteEth (window 0xF8008000, 32 KiB, remapped below),
+    // crossbar masters: 0 UART lite, 1 board regs, 2 boot ROM, 3 SPI (SD card), 4 LiteEth (CSR/MDIO 0xF8008000 16 KiB and packet buffers 0xF800C000 8 KiB, remapped below),
     // 5 AXI GPIO 0xF8003000, 6 AXI Timer (PWM) 0xF8004000, 7 SPI (MS5611) 0xF8005000,
     // 8 AXI IIC (PL_I2C) 0xF8006000, 9 AXI IIC (second bus) 0xF8007000
-    wire [319:0] x_awaddr, x_araddr, x_wdata, x_rdata;
-    wire [29:0] x_awprot, x_arprot;
-    wire [39:0] x_wstrb;
-    wire [19:0] x_bresp, x_rresp;
-    wire [9:0]  x_awvalid, x_awready, x_wvalid, x_wready, x_bvalid, x_bready;
-    wire [9:0]  x_arvalid, x_arready, x_rvalid, x_rready;
+    wire [351:0] x_awaddr, x_araddr, x_wdata, x_rdata;
+    wire [32:0] x_awprot, x_arprot;
+    wire [43:0] x_wstrb;
+    wire [21:0] x_bresp, x_rresp;
+    wire [10:0] x_awvalid, x_awready, x_wvalid, x_wready, x_bvalid, x_bready;
+    wire [10:0] x_arvalid, x_arready, x_rvalid, x_rready;
+
+    // second crossbar master: the DMA engine's source reads (write channels tied off)
+    wire [31:0] dm_araddr, dm_rdata;
+    wire        dm_arvalid, dm_rready;
+    wire [1:0]  dm_rresp;
+    wire [1:0]  xs_awready, xs_wready, xs_bvalid, xs_arready, xs_rvalid;
+    wire [3:0]  xs_bresp, xs_rresp;
+    wire [63:0] xs_rdata;
 
     xbar_per u_xbar (
         .aclk(per_clk), .aresetn(per_rst_n),
-        .s_axi_awaddr(q_awaddr), .s_axi_awprot(q_awprot), .s_axi_awvalid(q_awvalid), .s_axi_awready(q_awready),
-        .s_axi_wdata(q_wdata), .s_axi_wstrb(q_wstrb), .s_axi_wvalid(q_wvalid), .s_axi_wready(q_wready),
-        .s_axi_bresp(q_bresp), .s_axi_bvalid(q_bvalid), .s_axi_bready(q_bready),
-        .s_axi_araddr(q_araddr), .s_axi_arprot(q_arprot), .s_axi_arvalid(q_arvalid), .s_axi_arready(q_arready),
-        .s_axi_rdata(q_rdata), .s_axi_rresp(q_rresp), .s_axi_rvalid(q_rvalid), .s_axi_rready(q_rready),
+        .s_axi_awaddr({32'd0, q_awaddr}), .s_axi_awprot({3'd0, q_awprot}), .s_axi_awvalid({1'b0, q_awvalid}), .s_axi_awready(xs_awready),
+        .s_axi_wdata({32'd0, q_wdata}), .s_axi_wstrb({4'd0, q_wstrb}), .s_axi_wvalid({1'b0, q_wvalid}), .s_axi_wready(xs_wready),
+        .s_axi_bresp(xs_bresp), .s_axi_bvalid(xs_bvalid), .s_axi_bready({1'b1, q_bready}),
+        .s_axi_araddr({dm_araddr, q_araddr}), .s_axi_arprot({3'd0, q_arprot}), .s_axi_arvalid({dm_arvalid, q_arvalid}), .s_axi_arready(xs_arready),
+        .s_axi_rdata(xs_rdata), .s_axi_rresp(xs_rresp), .s_axi_rvalid(xs_rvalid), .s_axi_rready({dm_rready, q_rready}),
         .m_axi_awaddr(x_awaddr), .m_axi_awprot(x_awprot), .m_axi_awvalid(x_awvalid), .m_axi_awready(x_awready),
         .m_axi_wdata(x_wdata), .m_axi_wstrb(x_wstrb), .m_axi_wvalid(x_wvalid), .m_axi_wready(x_wready),
         .m_axi_bresp(x_bresp), .m_axi_bvalid(x_bvalid), .m_axi_bready(x_bready),
         .m_axi_araddr(x_araddr), .m_axi_arprot(x_arprot), .m_axi_arvalid(x_arvalid), .m_axi_arready(x_arready),
         .m_axi_rdata(x_rdata), .m_axi_rresp(x_rresp), .m_axi_rvalid(x_rvalid), .m_axi_rready(x_rready));
+
+    assign q_awready = xs_awready[0];
+    assign q_wready = xs_wready[0];
+    assign q_bresp = xs_bresp[1:0];
+    assign q_bvalid = xs_bvalid[0];
+    assign q_arready = xs_arready[0];
+    assign q_rdata = xs_rdata[31:0];
+    assign q_rresp = xs_rresp[1:0];
+    assign q_rvalid = xs_rvalid[0];
+    assign dm_rdata = xs_rdata[63:32];
+    assign dm_rresp = xs_rresp[3:2];
 
     uart_0 u_uart (
         .s_axi_aclk(per_clk), .s_axi_aresetn(per_rst_n), .interrupt(uart_irq_pulse),
@@ -476,4 +501,44 @@ ddr4_0 u_ddr4 (
         .gmii_rst_n(core_eth_rst_n), .gmii_tx_data(eth_txd), .gmii_tx_en(eth_tx_en), .gmii_tx_er(eth_tx_er),
         .gmii_rx_data(eth_rxd_q), .gmii_rx_dv(eth_rx_dv_q), .gmii_rx_er(eth_rx_er_q),
         .gmii_col(1'b0), .gmii_crs(1'b0), .gmii_int_n(1'b1), .gmii_mdc(), .gmii_mdio());
+
+    // ---------------------------------------------------------------- Ethernet RX copy engine (crossbar master 1, slave 10 at 0xF800E000)
+    wire        e_awvalid, e_awready, e_wvalid, e_wready, e_bvalid, e_bready;
+    wire [31:0] e_awaddr;
+    wire [63:0] e_wdata;
+    wire [7:0]  e_wstrb;
+    wire [1:0]  e_bresp;
+    wire        dm_arready = xs_arready[1];
+    wire        dm_rvalid = xs_rvalid[1];
+    eth_dma u_eth_dma (
+        .clk(per_clk), .rst_n(per_rst_n),
+        .s_awaddr(x_awaddr[324:320]), .s_awvalid(x_awvalid[10]), .s_awready(x_awready[10]),
+        .s_wdata(x_wdata[351:320]), .s_wstrb(x_wstrb[43:40]), .s_wvalid(x_wvalid[10]), .s_wready(x_wready[10]),
+        .s_bresp(x_bresp[21:20]), .s_bvalid(x_bvalid[10]), .s_bready(x_bready[10]),
+        .s_araddr(x_araddr[324:320]), .s_arvalid(x_arvalid[10]), .s_arready(x_arready[10]),
+        .s_rdata(x_rdata[351:320]), .s_rresp(x_rresp[21:20]), .s_rvalid(x_rvalid[10]), .s_rready(x_rready[10]),
+        .m_araddr(dm_araddr), .m_arvalid(dm_arvalid), .m_arready(dm_arready), .m_rdata(dm_rdata), .m_rresp(dm_rresp),
+        .m_rvalid(dm_rvalid), .m_rready(dm_rready),
+        .m_awaddr(e_awaddr), .m_awvalid(e_awvalid), .m_awready(e_awready), .m_wdata(e_wdata), .m_wstrb(e_wstrb),
+        .m_wvalid(e_wvalid), .m_wready(e_wready), .m_bresp(e_bresp), .m_bvalid(e_bvalid), .m_bready(e_bready), .irq(dma_irq));
+`ifdef WITH_DMA
+    cc_dma u_cc_dma (
+        .s_axi_aclk(per_clk), .s_axi_aresetn(per_rst_n),
+        .s_axi_awid(4'd0), .s_axi_awaddr(e_awaddr), .s_axi_awlen(8'd0), .s_axi_awsize(3'd3), .s_axi_awburst(2'd1),
+        .s_axi_awlock(1'b0), .s_axi_awcache(4'd0), .s_axi_awprot(3'd0), .s_axi_awregion(4'd0), .s_axi_awqos(4'd0),
+        .s_axi_awvalid(e_awvalid), .s_axi_awready(e_awready),
+        .s_axi_wdata(e_wdata), .s_axi_wstrb(e_wstrb), .s_axi_wlast(1'b1), .s_axi_wvalid(e_wvalid), .s_axi_wready(e_wready),
+        .s_axi_bid(), .s_axi_bresp(e_bresp), .s_axi_bvalid(e_bvalid), .s_axi_bready(e_bready),
+        .m_axi_aclk(cpu_clk), .m_axi_aresetn(cpu_rst_n),
+        .m_axi_awid(), .m_axi_awaddr(dma_awaddr), .m_axi_awlen(dma_awlen), .m_axi_awsize(dma_awsize), .m_axi_awburst(dma_awburst),
+        .m_axi_awlock(), .m_axi_awcache(), .m_axi_awprot(), .m_axi_awregion(), .m_axi_awqos(),
+        .m_axi_awvalid(dma_awvalid), .m_axi_awready(dma_awready),
+        .m_axi_wdata(dma_wdata), .m_axi_wstrb(dma_wstrb), .m_axi_wlast(dma_wlast), .m_axi_wvalid(dma_wvalid), .m_axi_wready(dma_wready),
+        .m_axi_bid(dma_bid), .m_axi_bresp(dma_bresp), .m_axi_bvalid(dma_bvalid), .m_axi_bready(dma_bready));
+`else
+    assign e_awready = 1'b0;
+    assign e_wready = 1'b0;
+    assign e_bvalid = 1'b0;
+    assign e_bresp = 2'b00;
+`endif
 endmodule

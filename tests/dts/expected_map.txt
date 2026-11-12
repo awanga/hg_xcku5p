@@ -7,3 +7,4 @@ xlnx,xps-gpio-1.00.a f8003000 5
 xlnx,xps-timer-1.00.a f8004000 -
 litex,liteeth f8009000 3
 xlnx,xps-iic-2.00.a f8006000 6
+litex,liteeth f800e000 8

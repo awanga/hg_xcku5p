@@ -43,3 +43,13 @@ else
 	git -C "$v" apply "$p"
 	echo "patch applied: $(basename "$p")"
 fi
+
+# Local Linux patches (linux/patches): applied once; skipped if already present.
+for p in "$here"/linux/patches/*.patch; do
+	if git -C "$tp/linux" apply --check -R "$p" 2>/dev/null; then
+		echo "patch already applied: $(basename "$p")"
+	else
+		git -C "$tp/linux" apply "$p"
+		echo "patch applied: $(basename "$p")"
+	fi
+done

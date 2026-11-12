@@ -1,0 +1,176 @@
+diff --git a/drivers/net/ethernet/litex/litex_liteeth.c b/drivers/net/ethernet/litex/litex_liteeth.c
+index 829a4b828..1a5c58070 100644
+--- a/drivers/net/ethernet/litex/litex_liteeth.c
++++ b/drivers/net/ethernet/litex/litex_liteeth.c
+@@ -8,6 +8,7 @@
+ 
+ #include <linux/etherdevice.h>
+ #include <linux/interrupt.h>
++#include <linux/iopoll.h>
+ #include <linux/litex.h>
+ #include <linux/module.h>
+ #include <linux/of_net.h>
+@@ -35,6 +36,18 @@
+ #define LITEETH_MDIO_W            0x04
+ #define LITEETH_MDIO_R            0x0C
+ 
++/* Optional receive copy engine (eth_dma): packet buffer window -> DDR through the coherent hub */
++#define LITEETH_DMA_SRC		0x00
++#define LITEETH_DMA_DST		0x04
++#define LITEETH_DMA_LEN		0x08
++#define LITEETH_DMA_CTRL	0x0c
++#define LITEETH_DMA_IEN		0x10
++#define LITEETH_DMA_CTRL_START	BIT(0)
++#define LITEETH_DMA_STAT_BUSY	BIT(0)
++#define LITEETH_DMA_STAT_DONE	BIT(1)
++#define LITEETH_DMA_STAT_ERR	BIT(2)
++#define LITEETH_DMA_CLEAR	0x6
++
+ #define DRV_NAME	"liteeth"
+ 
+ struct liteeth {
+@@ -52,6 +65,12 @@ struct liteeth {
+ 	u32 rx_slot;
+ 	u32 num_rx_slots;
+ 	void __iomem *rx_base;
++
++	/* Rx copy engine; dma is NULL when the device tree has no "dma" resource */
++	void __iomem *dma;
++	int dma_irq;
++	phys_addr_t rx_phys;
++	struct sk_buff *dma_skb;
+ };
+ 
+ static int liteeth_rx(struct net_device *netdev)
+@@ -89,6 +108,65 @@ static int liteeth_rx(struct net_device *netdev)
+ 	return NET_RX_DROP;
+ }
+ 
++/* Start copying the oldest received frame into a new skb; the Rx event stays masked and pending until the copy is done. */
++static void liteeth_rx_dma_start(struct net_device *netdev)
++{
++	struct liteeth *priv = netdev_priv(netdev);
++	struct sk_buff *skb;
++	u8 rx_slot;
++	int len;
++
++	rx_slot = litex_read8(priv->base + LITEETH_WRITER_SLOT);
++	len = litex_read32(priv->base + LITEETH_WRITER_LENGTH);
++
++	skb = (len == 0 || len > 2048) ? NULL : netdev_alloc_skb_ip_align(netdev, len);
++	if (!skb) {
++		netdev->stats.rx_dropped++;
++		netdev->stats.rx_errors++;
++		litex_write8(priv->base + LITEETH_WRITER_EV_PENDING, 1);
++		return;
++	}
++
++	priv->dma_skb = skb;
++	litex_write8(priv->base + LITEETH_WRITER_EV_ENABLE, 0);
++	writel(priv->rx_phys + rx_slot * priv->slot_size, priv->dma + LITEETH_DMA_SRC);
++	writel(virt_to_phys(skb_put(skb, len)), priv->dma + LITEETH_DMA_DST);
++	writel(len, priv->dma + LITEETH_DMA_LEN);
++	writel(LITEETH_DMA_CTRL_START, priv->dma + LITEETH_DMA_CTRL);
++}
++
++static irqreturn_t liteeth_dma_interrupt(int irq, void *dev_id)
++{
++	struct net_device *netdev = dev_id;
++	struct liteeth *priv = netdev_priv(netdev);
++	struct sk_buff *skb = priv->dma_skb;
++	u32 stat;
++
++	stat = readl(priv->dma + LITEETH_DMA_CTRL);
++	if (!(stat & LITEETH_DMA_STAT_DONE))
++		return IRQ_NONE;
++
++	/* The status read after the clear makes sure the interrupt level is gone before the handler returns */
++	writel(LITEETH_DMA_CLEAR, priv->dma + LITEETH_DMA_CTRL);
++	readl(priv->dma + LITEETH_DMA_CTRL);
++
++	priv->dma_skb = NULL;
++	if (skb && !(stat & LITEETH_DMA_STAT_ERR)) {
++		dev_sw_netstats_rx_add(netdev, skb->len);
++		skb->protocol = eth_type_trans(skb, netdev);
++		netif_rx(skb);
++	} else {
++		dev_kfree_skb_irq(skb);
++		netdev->stats.rx_dropped++;
++		netdev->stats.rx_errors++;
++	}
++
++	litex_write8(priv->base + LITEETH_WRITER_EV_PENDING, 1);
++	litex_write8(priv->base + LITEETH_WRITER_EV_ENABLE, 1);
++
++	return IRQ_HANDLED;
++}
++
+ static irqreturn_t liteeth_interrupt(int irq, void *dev_id)
+ {
+ 	struct net_device *netdev = dev_id;
+@@ -103,7 +181,10 @@ static irqreturn_t liteeth_interrupt(int irq, void *dev_id)
+ 	}
+ 
+ 	reg = litex_read8(priv->base + LITEETH_WRITER_EV_PENDING);
+-	if (reg) {
++	if (reg && priv->dma) {
++		if (!priv->dma_skb)
++			liteeth_rx_dma_start(netdev);
++	} else if (reg) {
+ 		liteeth_rx(netdev);
+ 		litex_write8(priv->base + LITEETH_WRITER_EV_PENDING, reg);
+ 	}
+@@ -126,6 +207,27 @@ static int liteeth_open(struct net_device *netdev)
+ 		return err;
+ 	}
+ 
++	if (priv->dma) {
++		err = request_irq(priv->dma_irq, liteeth_dma_interrupt, 0, "liteeth-dma", netdev);
++		if (err) {
++			free_irq(netdev->irq, netdev);
++	if (priv->dma) {
++		u32 stat;
++
++		/* A copy in flight finishes within microseconds; wait for it before the skb goes away */
++		readl_poll_timeout(priv->dma + LITEETH_DMA_CTRL, stat, !(stat & LITEETH_DMA_STAT_BUSY), 10, 10000);
++		writel(0, priv->dma + LITEETH_DMA_IEN);
++		free_irq(priv->dma_irq, netdev);
++		writel(LITEETH_DMA_CLEAR, priv->dma + LITEETH_DMA_CTRL);
++		dev_kfree_skb(priv->dma_skb);
++		priv->dma_skb = NULL;
++	}
++			return err;
++		}
++		writel(LITEETH_DMA_CLEAR, priv->dma + LITEETH_DMA_CTRL);
++		writel(1, priv->dma + LITEETH_DMA_IEN);
++	}
++
+ 	/* Enable IRQs */
+ 	litex_write8(priv->base + LITEETH_WRITER_EV_ENABLE, 1);
+ 	litex_write8(priv->base + LITEETH_READER_EV_ENABLE, 1);
+@@ -234,6 +336,7 @@ static int liteeth_probe(struct platform_device *pdev)
+ {
+ 	struct net_device *netdev;
+ 	void __iomem *buf_base;
++	struct resource *buf_res;
+ 	struct liteeth *priv;
+ 	int irq, err;
+ 
+@@ -266,6 +369,17 @@ static int liteeth_probe(struct platform_device *pdev)
+ 	if (IS_ERR(buf_base))
+ 		return PTR_ERR(buf_base);
+ 
++	buf_res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "buffer");
++	if (platform_get_resource_byname(pdev, IORESOURCE_MEM, "dma")) {
++		priv->dma = devm_platform_ioremap_resource_byname(pdev, "dma");
++		if (IS_ERR(priv->dma))
++			return PTR_ERR(priv->dma);
++		priv->dma_irq = platform_get_irq_byname(pdev, "dma");
++		if (priv->dma_irq < 0)
++			return priv->dma_irq;
++		priv->rx_phys = buf_res->start;
++	}
++
+ 	liteeth_setup_slots(priv);
+ 
+ 	/* Rx slots */

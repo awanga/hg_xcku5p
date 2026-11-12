@@ -231,10 +231,11 @@
 		 */
 		eth0: ethernet@f8009000 {
 			compatible = "litex,liteeth";
-			reg = <0xf8009000 0x100>, <0xf8008800 0x100>, <0xf800c000 0x2000>;
-			reg-names = "mac", "mdio", "buffer";
+			reg = <0xf8009000 0x100>, <0xf8008800 0x100>, <0xf800c000 0x2000>, <0xf800e000 0x100>;
+			reg-names = "mac", "mdio", "buffer", "dma";
 			interrupt-parent = <&plic>;
-			interrupts = <3>;
+			interrupts = <3>, <8>;
+			interrupt-names = "mac", "dma";
 			litex,rx-slots = <2>;
 			litex,tx-slots = <2>;
 			litex,slot-size = <0x800>;
