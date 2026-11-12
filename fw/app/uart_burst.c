@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
-/* UART TX integrity probe. Sends numbered lines so the host can see dropped or repeated characters, in four modes:
- * A polled TX_FULL like OpenSBI, B the same with fences around every access, C unchecked back-to-back writes that
- * reveal the FIFO depth the CPU sees, D paced writes (control). Run with tools/load.py, check with tools/uart_burst_check.py. */
+/* UART TX integrity probe. Sends numbered lines so the host can see dropped or repeated characters,
+ * in four modes: A polled TX_FULL like OpenSBI, B the same with fences around every access, C
+ * unchecked back-to-back writes that reveal the FIFO depth the CPU sees, D paced writes (control).
+ * Run with tools/load.py, check with tools/uart_burst_check.py. */
 #include <stdint.h>
 
 #define UART_BASE 0xF8000000UL

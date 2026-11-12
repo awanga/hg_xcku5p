@@ -14,4 +14,4 @@ for lat in 20 40; do
   $R/fpga/scripts/cpu/bench_vexii.sh r64_4k1w_nobp_l$lat  $E64 $lat $B64 --fetch-l1-ways=1 --lsu-l1-ways=1
   $R/fpga/scripts/cpu/bench_vexii.sh r32_8k2w_bp_l$lat    $E32 $lat $B32 --fetch-l1-ways=2 --lsu-l1-ways=2 $BP
 done
-echo done
+echo "done"

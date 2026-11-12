@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
 """Print kernel netconsole datagrams (UDP) with a timestamp: tools/netcon_listen.py [port] [seconds]."""
+
 import socket
 import sys
 import time

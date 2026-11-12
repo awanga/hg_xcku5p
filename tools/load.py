@@ -6,6 +6,7 @@ usage: load.py [-p PORT] [-b BAUD] [-a ADDR] [--run ADDR] [--no-run] image.bin[@
        load.py --make-stream image.bin OUT [-a ADDR]     (byte stream for the simulation testbench)
 Images without @ADDR go to -a (default 0x40100000). The program starts at --run (default: the first image's address).
 """
+
 import argparse
 import sys
 import time
@@ -24,7 +25,9 @@ def main():
     ap.add_argument("-a", "--addr", type=lambda x: int(x, 0), default=0x40100000)
     ap.add_argument("--no-run", action="store_true")
     ap.add_argument("--make-stream", action="store_true")
-    ap.add_argument("--listen", type=float, default=5.0, help="seconds of console output to show after GO")
+    ap.add_argument(
+        "--listen", type=float, default=5.0, help="seconds of console output to show after GO"
+    )
     a = ap.parse_args()
     if a.make_stream:
         image = open(a.image[0], "rb").read()
@@ -55,14 +58,17 @@ def main():
         s.write(b"W %x %x\n" % (addr, len(image)))
         t0 = time.time()
         for i in range(0, len(image), 256):
-            s.write(image[i:i + 256])
+            s.write(image[i : i + 256])
             s.flush()
         line = s.readline().decode(errors="replace").strip().lstrip("> ")
         want = "OK %08X" % (sum(image) & 0xFFFFFFFF)
         if line != want:
             print("%s: checksum mismatch: got %r want %r" % (path, line, want), file=sys.stderr)
             return 1
-        print("loaded %s: %d bytes at 0x%x in %.0f s, checksum ok" % (path, len(image), addr, time.time() - t0))
+        print(
+            "loaded %s: %d bytes at 0x%x in %.0f s, checksum ok"
+            % (path, len(image), addr, time.time() - t0)
+        )
     if not a.no_run:
         s.write(b"G %x\n" % (a.run if a.run is not None else images[0][0]))
         end = time.time() + a.listen

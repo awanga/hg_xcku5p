@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
-/* Smallest loadable program: prints a line and returns to the boot ROM loader. Used by tests/soc to exercise the loader. */
+/* Smallest loadable program: prints a line and returns to the boot ROM loader. Used by tests/soc to
+ * exercise the loader. */
 #include <stdint.h>
 
 #define UART_BASE 0xF8000000UL

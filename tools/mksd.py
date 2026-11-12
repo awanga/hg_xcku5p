@@ -6,6 +6,7 @@ usage: mksd.py OUT.img [--entry ADDR] file@addr [file@addr ...]      (--hex writ
 Header (little endian): "HGXBOOT\\0", entry count, entry address, then {lba, bytes, load address} per entry (max 8).
 Writing the image to a card is a separate, destructive step (dd); this tool only creates the file.
 """
+
 import argparse
 import struct
 

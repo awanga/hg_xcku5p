@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
-// Working-set sweep for the CPU cache study: sequential read, dependent random loads (pointer chase) and copy,
-// measured with the simulation time counter (1 tick = 1 core clock in the VexiiRiscv testbench).
-// Output lines: "MB <bytes> seq <cyc/64B x100> chase <cyc/access x100> copy <cyc/64B x100>"
+// Working-set sweep for the CPU cache study: sequential read, dependent random loads (pointer
+// chase) and copy, measured with the simulation time counter (1 tick = 1 core clock in the
+// VexiiRiscv testbench). Output lines: "MB <bytes> seq <cyc/64B x100> chase <cyc/access x100> copy
+// <cyc/64B x100>"
 #include "sim.h"
 
 #define BASE_PTR ((volatile unsigned long *)0x80100000UL)
@@ -35,7 +36,7 @@ static unsigned long rnd(void)
 
 int main(void)
 {
-	static const unsigned long sizes[] = { 4096, 8192, 16384, 32768, 65536, 131072, 262144 };
+	static const unsigned long sizes[] = {4096, 8192, 16384, 32768, 65536, 131072, 262144};
 	unsigned long i, k, s;
 
 	for (k = 0; k < sizeof(sizes) / sizeof(sizes[0]); k++) {
@@ -48,7 +49,8 @@ int main(void)
 		unsigned long t0, t_seq, t_chase, t_copy, sum = 0, p = 0, n_acc;
 		unsigned long r;
 
-		/* random cyclic permutation over the cache lines (Sattolo), stored in word 0 of each line */
+		/* random cyclic permutation over the cache lines (Sattolo), stored in word 0 of
+		 * each line */
 		for (i = 0; i < lines; i++)
 			a[i * (LINE / sizeof(unsigned long))] = i;
 		for (i = lines - 1; i > 0; i--) {
@@ -58,14 +60,16 @@ int main(void)
 			a[i * 8] = a[j * 8];
 			a[j * 8] = t;
 		}
-		/* warm: one pass (cache-resident sizes then measure steady state; larger sizes always miss) */
+		/* warm: one pass (cache-resident sizes then measure steady state; larger sizes
+		 * always miss) */
 		for (i = 0; i < words; i++)
 			sum += a[i];
 
 		t0 = sim_time();
 		for (r = 0; r < reps; r++)
 			for (i = 0; i < words; i += 8)
-				sum += a[i] + a[i + 1] + a[i + 2] + a[i + 3] + a[i + 4] + a[i + 5] + a[i + 6] + a[i + 7];
+				sum += a[i] + a[i + 1] + a[i + 2] + a[i + 3] + a[i + 4] + a[i + 5] +
+				       a[i + 6] + a[i + 7];
 		t_seq = sim_time() - t0;
 
 		n_acc = lines * reps;

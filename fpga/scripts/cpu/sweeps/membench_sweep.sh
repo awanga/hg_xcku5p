@@ -12,4 +12,4 @@ for lat in 20 40; do
   $R/fpga/scripts/cpu/bench_vexii.sh m64_8k2w_bp_sb_l$lat $E $lat $B64 --fetch-l1-ways=2 --lsu-l1-ways=2 --lsu-l1-store-buffer-slots=2 --lsu-l1-store-buffer-ops=32 $BP
   $R/fpga/scripts/cpu/bench_vexii.sh m64_32k4w_bp_l$lat  $E $lat $B64 --fetch-l1-ways=4 --lsu-l1-ways=4 --fetch-l1-sets=128 --lsu-l1-sets=128 $BP
 done
-echo done
+echo "done"

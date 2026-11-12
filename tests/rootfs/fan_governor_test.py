@@ -6,11 +6,16 @@ Policy (from the header of the script): stopped below T_OFF=40 C, restarts at T_
 linearly to 255 at T_MAX=70 C, speed up at once, down by at most STEP_DOWN=10 per cycle; die temperature from the SYSMONE4 code is
 code * 509.3140064 / 65536 - 280.2308787 degC; invalid readings give full speed.
 usage: fan_governor_test.py [script]  (default: linux/rootfs/fan-governor); exit 1 on any mismatch."""
+
 import os
 import subprocess
 import sys
 
-script = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(__file__), "../../linux/rootfs/fan-governor")
+script = (
+    sys.argv[1]
+    if len(sys.argv) > 1
+    else os.path.join(os.path.dirname(__file__), "../../linux/rootfs/fan-governor")
+)
 
 
 def model_target(t_c, cur):
@@ -32,7 +37,9 @@ def model_next(t_c, cur):
 
 def sh(expr):
     env = dict(os.environ, FAN_GOV_LIB="1")
-    out = subprocess.run(["sh", "-c", '. "%s"; %s' % (script, expr)], env=env, capture_output=True, text=True)
+    out = subprocess.run(
+        ["sh", "-c", '. "%s"; %s' % (script, expr)], env=env, capture_output=True, text=True
+    )
     return out.stdout.strip(), out.returncode
 
 
@@ -70,5 +77,8 @@ for t_c in list(range(30, 80, 2)) + list(range(80, 30, -2)):
     check("sweep at %d C" % t_c, got, str(cur_model))
     cur_sh = int(got)
 
-print("fan_governor_test checks=%d errors=%d %s" % (checks, errors, "PASS" if checks and not errors else "FAIL"))
+print(
+    "fan_governor_test checks=%d errors=%d %s"
+    % (checks, errors, "PASS" if checks and not errors else "FAIL")
+)
 sys.exit(1 if errors or not checks else 0)

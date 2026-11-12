@@ -48,7 +48,7 @@ static uint64_t hash(uint64_t a, uint64_t key)
 	return x ^ (x >> 32);
 }
 
-static const uint64_t key[2] = { 0x1111222233334444ULL, 0x5555666677778888ULL };
+static const uint64_t key[2] = {0x1111222233334444ULL, 0x5555666677778888ULL};
 
 static void evict(void)
 {
