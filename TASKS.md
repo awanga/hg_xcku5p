@@ -81,7 +81,7 @@
 - Status (2026-11-12, Phase 0-7 review): checkboxes below updated against the repo and board. New: CI script/workflow (scripts/ci.sh), tests/dts, scripts/fetch_sources.sh, docs/versions.md pins, decisions/0002,
   docs/patches.md, docs/mvp-acceptance.md, tools/build_report.py, tools/smoke.py, scripts/release.sh. Board (vv_io2, WNS +0.008, WHS +0.010): LEDs/keys/switches in the AXI GPIO, two I2C buses (bus 1 finds both EEPROMs, bus 0 none),
   Ethernet on the L2 image TX 72 / RX 41 Mb/s (docs/validation/io-expansion.md). Found and fixed a UART RX interrupt loss (pulse interrupt vs PLIC gateway; irq_hold.v; console_stress 400/400 vs 0-51/400).
-  Not written: config flash (still vv_l2e128) and SD card (new image build/linux/sdcard.img) await the owner. Open: owner checks (keys/DIP/LEDs, PL_I2C U4, flash part), release/versioning.
+  Config flash now holds vv_io2 (2026-11-12, erase+write+verify, cold-reset boot, smoke 16/16). Not written: SD card (new image build/linux/sdcard.img) await the owner. Open: owner checks (keys/DIP/LEDs, PL_I2C U4, flash part), release/versioning.
 - (older) Next: when build/soc/vv_333b.log shows EXIT=0, `openFPGALoader --cable ft232 build/soc/vv_333b/soc.bit`, then
   `tools/load.py fw/membench/build/membench_app.bin` to measure real L2-less latency vs the simulation model; then rerun L2 study on hardware;
   Linux-like workload; VexRiscv-SMP sim baseline.
