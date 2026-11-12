@@ -81,7 +81,7 @@
 - Status (2026-11-12, Phase 0-7 review): checkboxes below updated against the repo and board. New: CI script/workflow (scripts/ci.sh), tests/dts, scripts/fetch_sources.sh, docs/versions.md pins, decisions/0002,
   docs/patches.md, docs/mvp-acceptance.md, tools/build_report.py, tools/smoke.py, scripts/release.sh. Board (vv_io2, WNS +0.008, WHS +0.010): LEDs/keys/switches in the AXI GPIO, two I2C buses (bus 1 finds both EEPROMs, bus 0 none),
   Ethernet on the L2 image TX 72 / RX 41 Mb/s (docs/validation/io-expansion.md). Found and fixed a UART RX interrupt loss (pulse interrupt vs PLIC gateway; irq_hold.v; console_stress 400/400 vs 0-51/400).
-  Not written: config flash (still vv_l2e128) and SD card (new image build/linux/sdcard.img) await the owner. Open: owner checks (keys/DIP/LEDs, PL_I2C U4, flash part), hosted CI run, release/versioning.
+  Not written: config flash (still vv_l2e128) and SD card (new image build/linux/sdcard.img) await the owner. Open: owner checks (keys/DIP/LEDs, PL_I2C U4, flash part), release/versioning.
 - (older) Next: when build/soc/vv_333b.log shows EXIT=0, `openFPGALoader --cable ft232 build/soc/vv_333b/soc.bit`, then
   `tools/load.py fw/membench/build/membench_app.bin` to measure real L2-less latency vs the simulation model; then rerun L2 study on hardware;
   Linux-like workload; VexRiscv-SMP sim baseline.
@@ -192,7 +192,7 @@
 
 ## Phase 6 — CI and quality gates
 
-- [-] Add GitHub Actions PR workflow for formatting, shell/Python tests, configuration checks, device-tree validation, and patch application. (2026-11-12: .github/workflows/pr.yml runs scripts/ci.sh; passes locally, the hosted run is not yet confirmed)
+- [x] Add GitHub Actions PR workflow for formatting, shell/Python tests, configuration checks, device-tree validation, and patch application. (2026-11-12: .github/workflows/pr.yml runs scripts/ci.sh; passes locally and on GitHub (run 43146540624 on develop, ubuntu-24.04, success))
   - Acceptance: workflow runs without Vivado or physical hardware for ordinary PRs.
 - [x] Add a local scripted Vivado build with report extraction (no CI runner by project decision). (2026-11-12: build_soc.tcl archives report.json via tools/build_report.py; pass/fail gate by running the tool without --allow-negative-slack)
   - Acceptance: script archives utilization, timing, DRC, warnings, and build metadata; defined regressions fail the script.
@@ -211,7 +211,7 @@
   - Acceptance: CPU decision record contains measured resource/performance results and final approval.
 - [-] Tune CPU clock, cache sizes, interconnect widths/arbitration, and DDR settings one variable at a time. (clock 333 MHz, L1/L2 sizes and DDR4 rate measured one at a time; interconnect width/arbitration not explored)
   - Acceptance: each accepted change meets the README resource/performance rule and passes timing closure plus functional regression.
-- [-] Confirm final MVP acceptance criteria in README. (2026-11-12: docs/mvp-acceptance.md: 6 PASS, 5 PARTIAL, 0 open)
+- [-] Confirm final MVP acceptance criteria in README. (2026-11-12: docs/mvp-acceptance.md: 7 PASS, 4 PARTIAL, 0 open)
   - Acceptance: checklist is backed by logs/reports and physical-board evidence; unresolved items are clearly marked.
 - [ ] Tag first MVP release and publish artifacts.
   - Acceptance: versioned bitstream, boot firmware, kernel, DTB, rootfs, manifest, checksums, build instructions, and recovery procedure are available.
