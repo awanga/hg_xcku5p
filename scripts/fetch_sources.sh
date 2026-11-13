@@ -34,6 +34,10 @@ echo "$sources" | while read -r name url commit; do
 	echo "ok $name $commit"
 done
 
+# VexiiRiscv pins SpinalHDL and its other dependencies as submodules (ext/); fetch them at the recorded commits.
+git -C "$tp/VexiiRiscv" submodule update --init --recursive --depth 1 -q
+echo "ok VexiiRiscv submodules: $(git -C "$tp/VexiiRiscv" submodule status --recursive | awk '{print $1":"$2}' | tr '\n' ' ')"
+
 # Local patches (fpga/patches): applied once; skipped if already present.
 v=$tp/VexiiRiscv
 p=$here/fpga/patches/vexii-l2-blackbox.patch
