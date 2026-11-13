@@ -18,6 +18,7 @@ make ARCH=riscv CROSS_COMPILE="$cross" O="$out" tinyconfig >/dev/null
 make ARCH=riscv CROSS_COMPILE="$cross" O="$out" olddefconfig >/dev/null
 ./scripts/config --file "$out/.config" -d EFI -d RISCV_ISA_C
 [ "${KDEBUG:-0}" = 1 ] && ./scripts/config --file "$out/.config" -e DYNAMIC_DEBUG -e DEBUG_FS
+[ "${KNFS:-0}" = 1 ] && ./scripts/config --file "$out/.config" -e NFS_FS -e NFS_V3 -e ROOT_NFS -e IP_PNP -e IP_PNP_DHCP
 [ "${KPROFILE:-0}" = 1 ] && ./scripts/config --file "$out/.config" -e PROFILING
 make ARCH=riscv CROSS_COMPILE="$cross" O="$out" olddefconfig >/dev/null
 if grep -q '^CONFIG_RISCV_ISA_C=y' "$out/.config"; then echo "RISCV_ISA_C still enabled" >&2; exit 1; fi
