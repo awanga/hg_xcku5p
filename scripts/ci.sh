@@ -26,6 +26,7 @@ step clang-format clang-format --dry-run --Werror $c_files
 step ruff-check ruff check . --exclude build
 step ruff-format ruff format --check . --exclude build
 step dts bash tests/dts/run.sh
+step xbar_map python3 tests/dts/xbar_map.py
 step rootfs bash tests/rootfs/run.sh
 [ "${1:-}" = "--quick" ] || step rtl bash tests/rtl/run.sh
 
