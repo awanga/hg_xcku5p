@@ -86,7 +86,7 @@ Board-tested; details and evidence in `TASKS.md` and `docs/validation/`.
   user LEDs, keys K1-K4 and DIP switches SW1-SW4 (Linux gpio-leds / gpio-keys-polled), two AXI IIC buses (bus 1: two BL24C256 EEPROMs at 0x50/0x51; bus 0 / U4 not detected, owner to check).
   The UART interrupt is held until the CPU reads the UART (`fpga/rtl/irq_hold.v`); the PLIC drops a one-cycle pulse that arrives during an in-flight interrupt.
 - **Boot:** the FPGA configures from the QSPI flash (SPIx4, 51 MHz), the boot ROM loads OpenSBI, kernel and root filesystem from the SD card. The flash on this board probes as a 128 Mb part (JEDEC 0x20BB18),
-  not the 256 Mb part named above; a tested script restores the vendor image (`factory/`). Not yet implemented: PCIe, FMC, QSFP, HDMI, DMA masters.
+  not the 256 Mb part named above; a tested script restores the vendor image (`factory/`). Ethernet receive copy engine on the coherent hub (RX 46 Mb/s, `docs/validation/eth-dma.md`). Not yet implemented: PCIe, FMC, QSFP, HDMI.
 - **Tooling:** `scripts/ci.sh` (shellcheck, clang-format, ruff, device-tree address/IRQ map, rootfs and RTL tests; also run by GitHub Actions), `scripts/fetch_sources.sh` (pinned external sources),
   `tools/build_report.py` (timing/DRC report.json), `tools/smoke.py` (18 hardware checks over the console), `scripts/release.sh` (dry run only; versioning scheme not yet approved).
 - **Simulation:** `tests/rtl/run.sh` (unit tests with mutants) and `tests/soc/run.sh` (Verilator, default SoC netlist `soc_l2u_128k_w4` from `fpga/scripts/cpu/gen_default_soc.sh`).
