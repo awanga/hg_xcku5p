@@ -9,6 +9,7 @@ here=$(cd "$(dirname "$0")/.." && pwd)
 [ $# -ge 2 ] || { echo "usage: $0 <version> <flash-ready.bit> [outdir]" >&2; exit 2; }
 ver=$1
 bit=$2
+bit_report=${BIT_REPORT:-$(dirname "$2")/vv_dma3/report.json}
 out=${3:-$here/build/release/$ver}
 b=$here/build/linux
 
@@ -23,7 +24,19 @@ $b/kernel_sd/arch/riscv/boot/Image boot/Image
 $b/hg-xcku5p-sdroot.dtb boot/hg-xcku5p-sdroot.dtb
 $b/rootfs_ro.ext4 rootfs/rootfs_ro.ext4
 $b/br/build/packages-file-list.txt rootfs/package-file-list.txt
+$b/boot_area.img boot/boot_area.img
+$bit_report bitstream/report.json
 $here/docs/versions.md docs/versions.md
+$here/docs/build.md docs/build.md
+$here/docs/mvp-acceptance.md docs/mvp-acceptance.md
+$here/docs/patches.md docs/patches.md
+$here/docs/legal/README.md docs/legal/README.md
+$here/docs/legal/rootfs-manifest.csv docs/legal/rootfs-manifest.csv
+$here/linux/patches/0001-net-liteeth-optional-receive-copy-engine.patch patches/0001-net-liteeth-optional-receive-copy-engine.patch
+$here/fpga/patches/vexii-l2-blackbox.patch patches/vexii-l2-blackbox.patch
+$here/tools/mkcard.py tools/mkcard.py
+$here/tools/smoke.py tools/smoke.py
+$here/VERSION VERSION
 $here/docs/validation/flash-boot.md docs/recovery-flash-boot.md
 $here/factory/README.md docs/recovery-factory.md
 $here/factory/restore.sh recovery/restore.sh
