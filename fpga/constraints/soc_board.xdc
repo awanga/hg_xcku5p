@@ -108,3 +108,24 @@ set_property PACKAGE_PIN B9 [get_ports i2c1_sda]
 set_property IOSTANDARD LVCMOS33 [get_ports {i2c0_scl i2c0_sda i2c1_scl i2c1_sda}]
 set_false_path -from [get_ports {i2c0_scl i2c0_sda i2c1_scl i2c1_sda}]
 set_false_path -to [get_ports {i2c0_scl i2c0_sda i2c1_scl i2c1_sda}]
+
+# HDMI output: TMDS pairs in bank 65 (VCCO 1.2 V, AC coupled on the board with 51 R pull-ups to 3.3 V at the connector side), connector 5 V enable Y16
+# (HDMI1_OUT_EN) and hot-plug detect AB16 (HDMI1_HPD, buffered) in a 3.3 V bank. DDC/CEC are not connected to the FPGA. Pins from docs/hardware/schematic-pin-extract.csv.
+# TMDS clock channel T25/U25, data 0 (blue) N24/P24, data 1 (green) V24/W24, data 2 (red) V23/W23.
+set_property PACKAGE_PIN T25 [get_ports hdmi_clk_p]
+set_property PACKAGE_PIN U25 [get_ports hdmi_clk_n]
+set_property PACKAGE_PIN N24 [get_ports {hdmi_d_p[0]}]
+set_property PACKAGE_PIN P24 [get_ports {hdmi_d_n[0]}]
+set_property PACKAGE_PIN V24 [get_ports {hdmi_d_p[1]}]
+set_property PACKAGE_PIN W24 [get_ports {hdmi_d_n[1]}]
+set_property PACKAGE_PIN V23 [get_ports {hdmi_d_p[2]}]
+set_property PACKAGE_PIN W23 [get_ports {hdmi_d_n[2]}]
+set_property IOSTANDARD DIFF_HSTL_I_12 [get_ports {hdmi_clk_p hdmi_clk_n hdmi_d_p[*] hdmi_d_n[*]}]
+set_property PACKAGE_PIN Y16 [get_ports hdmi_oe]
+set_property PACKAGE_PIN AB16 [get_ports hdmi_hpd]
+set_property IOSTANDARD LVCMOS33 [get_ports {hdmi_oe hdmi_hpd}]
+set_false_path -from [get_ports hdmi_hpd]
+set_false_path -to [get_ports hdmi_oe]
+# The pixel and 5x clocks come from one MMCM (related); everything else crosses with synchronisers or stable-data handshakes (toggle + held value).
+set_clock_groups -asynchronous -group [get_clocks -of_objects [get_nets per_clk]] \
+    -group [list [get_clocks -of_objects [get_nets pclk]] [get_clocks -of_objects [get_nets clk5]]]

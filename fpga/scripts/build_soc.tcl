@@ -37,8 +37,11 @@ set_property -dict [list CONFIG.PROTOCOL AXI4LITE CONFIG.DATA_WIDTH 32 CONFIG.AD
 create_ip -name axi_clock_converter -vendor xilinx.com -library ip -module_name cc_dma
 set_property -dict [list CONFIG.PROTOCOL AXI4 CONFIG.DATA_WIDTH 64 CONFIG.ADDR_WIDTH 32 CONFIG.ID_WIDTH 4 CONFIG.ACLK_ASYNC 1 \
     CONFIG.READ_WRITE_MODE WRITE_ONLY] [get_ips cc_dma]
+create_ip -name axi_clock_converter -vendor xilinx.com -library ip -module_name cc_dmar
+set_property -dict [list CONFIG.PROTOCOL AXI4 CONFIG.DATA_WIDTH 64 CONFIG.ADDR_WIDTH 32 CONFIG.ID_WIDTH 4 CONFIG.ACLK_ASYNC 1 \
+    CONFIG.READ_WRITE_MODE READ_ONLY] [get_ips cc_dmar]
 create_ip -name axi_crossbar -vendor xilinx.com -library ip -module_name xbar_per
-set_property -dict [list CONFIG.PROTOCOL AXI4LITE CONFIG.NUM_SI 2 CONFIG.NUM_MI 11 CONFIG.ADDR_RANGES 2 CONFIG.ADDR_WIDTH 32 CONFIG.DATA_WIDTH 32 \
+set_property -dict [list CONFIG.PROTOCOL AXI4LITE CONFIG.NUM_SI 2 CONFIG.NUM_MI 12 CONFIG.ADDR_RANGES 2 CONFIG.ADDR_WIDTH 32 CONFIG.DATA_WIDTH 32 \
     CONFIG.M00_A00_BASE_ADDR 0x00000000F8000000 CONFIG.M00_A00_ADDR_WIDTH 12 \
     CONFIG.M01_A00_BASE_ADDR 0x00000000F8001000 CONFIG.M01_A00_ADDR_WIDTH 12 \
     CONFIG.M02_A00_BASE_ADDR 0x0000000010000000 CONFIG.M02_A00_ADDR_WIDTH 16 \
@@ -50,7 +53,8 @@ set_property -dict [list CONFIG.PROTOCOL AXI4LITE CONFIG.NUM_SI 2 CONFIG.NUM_MI 
     CONFIG.M07_A00_BASE_ADDR 0x00000000F8005000 CONFIG.M07_A00_ADDR_WIDTH 12 \
     CONFIG.M08_A00_BASE_ADDR 0x00000000F8006000 CONFIG.M08_A00_ADDR_WIDTH 12 \
     CONFIG.M09_A00_BASE_ADDR 0x00000000F8007000 CONFIG.M09_A00_ADDR_WIDTH 12 \
-    CONFIG.M10_A00_BASE_ADDR 0x00000000F800E000 CONFIG.M10_A00_ADDR_WIDTH 12] [get_ips xbar_per]
+    CONFIG.M10_A00_BASE_ADDR 0x00000000F800E000 CONFIG.M10_A00_ADDR_WIDTH 12 \
+    CONFIG.M11_A00_BASE_ADDR 0x00000000F800F000 CONFIG.M11_A00_ADDR_WIDTH 12] [get_ips xbar_per]
 create_ip -name axi_uartlite -vendor xilinx.com -library ip -module_name uart_0
 set_property -dict [list CONFIG.C_BAUDRATE 230400 CONFIG.C_S_AXI_ACLK_FREQ_HZ 100000000] [get_ips uart_0]
 # AXI GPIO (DS18B20 1-Wire, buzzer, fan tach) and AXI Timer (fan PWM): both have upstream Linux drivers (gpio-xilinx, pwm-xilinx).
@@ -65,7 +69,7 @@ generate_target all [get_ips]
 set liteeth $root/build/liteeth/gateware/liteeth_core.v
 if {![file exists $liteeth]} { error "missing $liteeth: run fpga/scripts/gen_liteeth.sh" }
 add_files [list $root/fpga/rtl/soc_top.v $root/fpga/rtl/axil_simple.v $root/fpga/rtl/boot_rom.v \
-    $root/fpga/rtl/soc_regs.v $root/fpga/rtl/spi_sifive.v $root/fpga/rtl/eth_addr_map.v $root/fpga/rtl/irq_pulse.v $root/fpga/rtl/irq_sync.v $root/fpga/rtl/gmii_rx_reg.v $root/fpga/rtl/drp_reader.v $root/fpga/rtl/ddr_halfmap.v $root/fpga/rtl/board_gpio_map.v $root/fpga/rtl/irq_hold.v $root/fpga/rtl/eth_dma.v $root/fpga/rtl/clk_freq_meter.v $root/fpga/rtl/vexii_ram.v $root/build/soc/$soc/$soc.v \
+    $root/fpga/rtl/soc_regs.v $root/fpga/rtl/spi_sifive.v $root/fpga/rtl/eth_addr_map.v $root/fpga/rtl/irq_pulse.v $root/fpga/rtl/irq_sync.v $root/fpga/rtl/gmii_rx_reg.v $root/fpga/rtl/drp_reader.v $root/fpga/rtl/ddr_halfmap.v $root/fpga/rtl/board_gpio_map.v $root/fpga/rtl/irq_hold.v $root/fpga/rtl/eth_dma.v $root/fpga/rtl/hdmi_out.v $root/fpga/rtl/hdmi_timing.v $root/fpga/rtl/hdmi_fetch.v $root/fpga/rtl/hdmi_linebuf.v $root/fpga/rtl/tmds_encoder.v $root/fpga/rtl/tmds_ser.v $root/fpga/rtl/clk_freq_meter.v $root/fpga/rtl/vexii_ram.v $root/build/soc/$soc/$soc.v \
     $liteeth]
 add_files -fileset constrs_1 [list $root/fpga/constraints/ddr4_pins.xdc $root/fpga/constraints/bringup_board.xdc \
     $root/fpga/constraints/soc_board.xdc]

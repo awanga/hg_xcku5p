@@ -84,9 +84,11 @@ module hdmi_out #(
 
     wire [31:0] late, lines, frames;
     wire        rerr, busy_unused;
-    reg         hpd_s1 = 1'b0, hpd_s2 = 1'b0;
+    (* ASYNC_REG = "TRUE" *) reg hpd_s1 = 1'b0;
+    (* ASYNC_REG = "TRUE" *) reg hpd_s2 = 1'b0;
     wire        running_c;
-    reg         run_s1 = 1'b0, run_s2 = 1'b0;
+    (* ASYNC_REG = "TRUE" *) reg run_s1 = 1'b0;
+    (* ASYNC_REG = "TRUE" *) reg run_s2 = 1'b0;
     always @(posedge clk) begin
         hpd_s1 <= hpd;
         hpd_s2 <= hpd_s1;
@@ -136,7 +138,8 @@ module hdmi_out #(
         .late(late), .lines(lines), .rerr(rerr), .busy(busy_unused));
 
     // ---- pixel domain
-    reg en_p1 = 1'b0, en_p2 = 1'b0;
+    (* ASYNC_REG = "TRUE" *) reg en_p1 = 1'b0;
+    (* ASYNC_REG = "TRUE" *) reg en_p2 = 1'b0;
     always @(posedge pclk) begin
         en_p1 <= enable;
         en_p2 <= en_p1;
@@ -152,7 +155,7 @@ module hdmi_out #(
 
     // frame counter: count frame_start in the pixel domain, read it in clk through a toggle
     reg        fs_tg = 1'b0;
-    reg [2:0]  fs_s = 3'd0;
+    (* ASYNC_REG = "TRUE" *) reg [2:0] fs_s = 3'd0;
     reg [31:0] frames_r = 32'd0;
     always @(posedge pclk) if (frame_start) fs_tg <= ~fs_tg;
     always @(posedge clk) begin

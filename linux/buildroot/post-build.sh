@@ -54,3 +54,22 @@ stop)
 esac
 SCRIPT
 chmod 755 "$1/etc/init.d/S04fan"
+
+# HDMI scan-out (fpga/rtl/hdmi_out.v at 0xF800F000): enabled only when the bitstream has it (MODE register reads 1024x768) and the device tree reserved
+# the frame buffer (linux/dts/hg-xcku5p-hdmi.dtsi, /proc/device-tree/framebuffer@7fe00000). FB_BASE = 0x7FE00000, CTRL = ENABLE | OE.
+cat >"$1/etc/init.d/S03hdmi" <<'SCRIPT'
+#!/bin/sh
+HDMI=0xF800F000
+case "$1" in
+start)
+	[ -d /proc/device-tree/framebuffer@7fe00000 ] || exit 0
+	[ "$(devmem $((HDMI + 0x18)) 32 2>/dev/null)" = 0x04000300 ] || exit 0
+	devmem $((HDMI + 0x04)) 32 0x7FE00000
+	devmem $HDMI 32 3
+	;;
+stop)
+	[ "$(devmem $((HDMI + 0x18)) 32 2>/dev/null)" = 0x04000300 ] && devmem $HDMI 32 0
+	;;
+esac
+SCRIPT
+chmod 755 "$1/etc/init.d/S03hdmi"

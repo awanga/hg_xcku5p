@@ -1,0 +1,14 @@
+// SPDX-License-Identifier: MIT
+/*
+ * SD-root boot with the HDMI frame buffer: kernel messages go to the screen (console=tty0) and to the UART (the last console, /dev/console).
+ * Needs a kernel built with KHDMI=1 and a bitstream with hdmi_out (vv_hdmi or later).
+ */
+/dts-v1/;
+#include "hg-xcku5p.dtsi"
+#include "hg-xcku5p-hdmi.dtsi"
+
+/ {
+	chosen {
+		bootargs = "console=tty0 console=ttyUL0,230400 earlycon=sbi root=/dev/mmcblk0p1 rootwait ro rootfstype=ext4";
+	};
+};

@@ -38,7 +38,7 @@ module hdmi_fetch #(
     localparam NBURST = LINE_BEATS / BURST;
     localparam LINE_BYTES = LINE_BEATS * 8;
 
-    reg [2:0] rq = 3'd0;
+    (* ASYNC_REG = "TRUE" *) reg [2:0] rq = 3'd0;
     wire      new_req = rq[1] ^ rq[2];
     reg [31:0] base_q;
     reg        bank;
