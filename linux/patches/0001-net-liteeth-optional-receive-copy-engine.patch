@@ -1,5 +1,5 @@
 diff --git a/drivers/net/ethernet/litex/litex_liteeth.c b/drivers/net/ethernet/litex/litex_liteeth.c
-index 829a4b828..1a5c58070 100644
+index 829a4b828..f6a73722e 100644
 --- a/drivers/net/ethernet/litex/litex_liteeth.c
 +++ b/drivers/net/ethernet/litex/litex_liteeth.c
 @@ -8,6 +8,7 @@
@@ -120,7 +120,7 @@ index 829a4b828..1a5c58070 100644
  		liteeth_rx(netdev);
  		litex_write8(priv->base + LITEETH_WRITER_EV_PENDING, reg);
  	}
-@@ -126,6 +207,27 @@ static int liteeth_open(struct net_device *netdev)
+@@ -126,6 +207,16 @@ static int liteeth_open(struct net_device *netdev)
  		return err;
  	}
  
@@ -128,6 +128,19 @@ index 829a4b828..1a5c58070 100644
 +		err = request_irq(priv->dma_irq, liteeth_dma_interrupt, 0, "liteeth-dma", netdev);
 +		if (err) {
 +			free_irq(netdev->irq, netdev);
++			return err;
++		}
++		writel(LITEETH_DMA_CLEAR, priv->dma + LITEETH_DMA_CTRL);
++		writel(1, priv->dma + LITEETH_DMA_IEN);
++	}
++
+ 	/* Enable IRQs */
+ 	litex_write8(priv->base + LITEETH_WRITER_EV_ENABLE, 1);
+ 	litex_write8(priv->base + LITEETH_READER_EV_ENABLE, 1);
+@@ -147,6 +238,17 @@ static int liteeth_stop(struct net_device *netdev)
+ 	litex_write8(priv->base + LITEETH_READER_EV_ENABLE, 0);
+ 
+ 	free_irq(netdev->irq, netdev);
 +	if (priv->dma) {
 +		u32 stat;
 +
@@ -139,15 +152,9 @@ index 829a4b828..1a5c58070 100644
 +		dev_kfree_skb(priv->dma_skb);
 +		priv->dma_skb = NULL;
 +	}
-+			return err;
-+		}
-+		writel(LITEETH_DMA_CLEAR, priv->dma + LITEETH_DMA_CTRL);
-+		writel(1, priv->dma + LITEETH_DMA_IEN);
-+	}
-+
- 	/* Enable IRQs */
- 	litex_write8(priv->base + LITEETH_WRITER_EV_ENABLE, 1);
- 	litex_write8(priv->base + LITEETH_READER_EV_ENABLE, 1);
+ 
+ 	return 0;
+ }
 @@ -234,6 +336,7 @@ static int liteeth_probe(struct platform_device *pdev)
  {
  	struct net_device *netdev;

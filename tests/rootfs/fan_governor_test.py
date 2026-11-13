@@ -19,8 +19,13 @@ script = (
 )
 
 
-SEGS = [(85.0, None, None), (80.0, (80, 85), (217, 255)), (65.0, (65, 80), (128, 217)),
-        (45.0, (45, 65), (77, 128)), (30.0, (30, 45), (38, 61))]
+SEGS = [
+    (85.0, None, None),
+    (80.0, (80, 85), (217, 255)),
+    (65.0, (65, 80), (128, 217)),
+    (45.0, (45, 65), (77, 128)),
+    (30.0, (30, 45), (38, 61)),
+]
 
 
 def model_target(t_c):
@@ -76,13 +81,30 @@ for code in (1, 1000, 32768, 40000, 42490, 48000, 65534):
         print("FAIL conversion code %d: got %s mC, model %.1f mC" % (code, got, want * 1000))
 
 # duty policy over (held) temperatures and starting duties, including the ramp-down limit and every segment boundary
-for t_mc in (20000, 29999, 30000, 37500, 44999, 45000, 55000, 64999, 65000, 72500, 79999, 80000, 82500, 84999, 85000, 90000):
+for t_mc in (
+    20000,
+    29999,
+    30000,
+    37500,
+    44999,
+    45000,
+    55000,
+    64999,
+    65000,
+    72500,
+    79999,
+    80000,
+    82500,
+    84999,
+    85000,
+    90000,
+):
     for cur in (0, 40, 77, 120, 255):
         got, _ = sh("next_duty %d %d" % (t_mc, cur))
         check("next_duty(%d mC, %d)" % (t_mc, cur), got, str(model_next(t_mc / 1000.0, cur)))
 
 # hysteresis: temperature sequences feeding each result back in
-for seq, start in (([40, 44, 43, 41, 39, 38, 37, 36, 50, 49, 47, 45, 44], 20.0),):
+for seq, _start in (([40, 44, 43, 41, 39, 38, 37, 36, 50, 49, 47, 45, 44], 20.0),):
     held_sh, held_m = -100000, -100.0
     for t_c in seq:
         got, _ = sh("held_temp %d %d" % (t_c * 1000, held_sh))

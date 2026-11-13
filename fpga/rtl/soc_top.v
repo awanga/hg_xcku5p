@@ -124,10 +124,10 @@ module soc_top #(
     // The peripheral interrupts come from per_clk; synchronize them into the CPU clock before they reach the PLIC gateways.
     // PLIC sources: 1 UART lite, 2 SPI (SD), 3 LiteEth, 4 SPI (MS5611), 5 GPIO.
     wire        spi1_irq_level, spi1_irq, gpio_irq;
-    wire [6:0]  irq_sync_q;
+    wire [7:0]  irq_sync_q;
     wire        i2c0_irq, i2c1_irq, dma_irq;
     irq_sync #(.W(8)) u_irq_sync (.clk(cpu_clk), .d({dma_irq, i2c1_irq, i2c0_irq, gpio_irq, spi1_irq, eth_irq, spi_irq, uart_irq}), .q(irq_sync_q));
-    wire [31:0] irq = {24'd0, irq_sync_q, 1'b0};
+    wire [31:0] irq = {23'd0, irq_sync_q, 1'b0};
 
 `ifdef WITH_DMA
     // Hub DMA port, driven by the eth_dma engine through cc_dma (write only; the read channels are tied off).

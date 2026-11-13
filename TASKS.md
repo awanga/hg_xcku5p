@@ -7,7 +7,7 @@
 - Decision: no self-hosted CI runner; Vivado + hardware jobs run locally; hosted GitHub Actions only for non-licensed checks.
   Reason: user direction. Status: README/AGENTS/TASKS updated.
 - Decision: default SoC = coherency hub + 128 KiB 4-way L2 in UltraRAM (soc_l2u_128k_w4, fpga/scripts/cpu/gen_default_soc.sh), owner-approved 2026-11-08.
-  Reason: gzip 1.55x, shell 1.28x under Linux, timing met. Status: docs/decisions/0006-l2-cache.md; vv_l2e128 (WNS +0.020, WHS +0.010) is the L2 reference; the config flash now holds vv_io2 (L2 + LED/key/I2C, WNS +0.008).
+  Reason: gzip 1.55x, shell 1.28x under Linux, timing met. Status: docs/decisions/0006-l2-cache.md; vv_l2e128 (WNS +0.020, WHS +0.010) is the L2 reference; the config flash now holds vv_dma3 (L2 + LED/key/I2C + Ethernet DMA, WNS +0.001).
 - Decision: board memory/flash (owner-stated, NOT yet schematic-verified): config flash MT25QU256ABA1EW9-0SIT;
   DDR4 2 x MT40A256M16GE-075E, 32-bit bus (1 GiB). Status: recorded in docs/hardware/board-inventory.md.
 - Status: Vivado 2026.1 works for xcku5p-ffvb676-2-i with the free license (scripts/check-env.sh PASS: synth, place, route, bitstream
@@ -81,7 +81,7 @@
 - Status (2026-11-12, Phase 0-7 review): checkboxes below updated against the repo and board. New: CI script/workflow (scripts/ci.sh), tests/dts, scripts/fetch_sources.sh, docs/versions.md pins, decisions/0002,
   docs/patches.md, docs/mvp-acceptance.md, tools/build_report.py, tools/smoke.py, scripts/release.sh. Board (vv_io2, WNS +0.008, WHS +0.010): LEDs/keys/switches in the AXI GPIO, two I2C buses (bus 1 finds both EEPROMs, bus 0 none),
   Ethernet on the L2 image TX 72 / RX 41 Mb/s (docs/validation/io-expansion.md). Found and fixed a UART RX interrupt loss (pulse interrupt vs PLIC gateway; irq_hold.v; console_stress 400/400 vs 0-51/400).
-  Config flash now holds vv_io2 (2026-11-12, erase+write+verify, cold-reset boot, smoke 16/16). Eth DMA (branch feature/eth-dma): fpga/rtl/eth_dma.v copy engine (per_clk, AXI-Lite read of the LiteEth window, single-beat 64-bit AXI4 writes to the hub DMA port) with tb_eth_dma (654 checks, Icarus+Verilator, 6 mutants) is done; SoC wiring, DT node and linux/patches liteeth patch done; vv_dma2f (Performance_ExplorePostRoutePhysOpt + postroute_fix) WNS +0.001/WHS +0.008, loaded by JTAG: smoke 16/16 and engine registers respond on the board (len-0 job sets DONE); new SD image build/linux/sdcard.img (fan curve, driver) awaits the owner's write; then iperf3 and merge. Fan curve reworked (30/45/65/80/85 C points, 4 C hysteresis; host-tested). Not written: SD card (new image build/linux/sdcard.img) await the owner. Open: owner checks (keys/DIP/LEDs, PL_I2C U4, flash part), release/versioning.
+  Config flash now holds vv_io2 (2026-11-12, erase+write+verify, cold-reset boot, smoke 16/16). Eth DMA (merged): vv_dma3 (WNS +0.001) is in the config flash; RX 46.2 Mb/s vs 41.3, 0 errors, smoke 19/19 (docs/validation/eth-dma.md). Fan curve reworked (host-tested; the SD image with it is the owner's to write). SD root partition still has the old fan-governor (full image build/linux/sdcard.img not written). Open: owner checks (keys/DIP/LEDs, PL_I2C U4, flash part), release/versioning.
 - (older) Next: when build/soc/vv_333b.log shows EXIT=0, `openFPGALoader --cable ft232 build/soc/vv_333b/soc.bit`, then
   `tools/load.py fw/membench/build/membench_app.bin` to measure real L2-less latency vs the simulation model; then rerun L2 study on hardware;
   Linux-like workload; VexRiscv-SMP sim baseline.
