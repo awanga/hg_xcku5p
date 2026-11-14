@@ -1,6 +1,6 @@
 # 0007 — Scope of the CPU benchmark and interconnect tuning for the MVP
 
-- Status: accepted for the MVP by the agent on 2026-11-13, **owner to confirm** (it closes two Phase 7 tasks)
+- Status: accepted for the MVP by the agent on 2026-11-13, confirmed by the owner on 2026-11-14 (it closes two Phase 7 tasks)
 - Date: 2026-11-13
 
 ## CPU candidates

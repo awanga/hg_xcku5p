@@ -207,9 +207,9 @@
 
 - [x] Review every local kernel/device-tree patch for upstreamability. (2026-11-12: docs/patches.md; no kernel patches, one VexiiRiscv patch)
   - Acceptance: each patch has purpose, base version, test evidence, and disposition.
-- [x] Benchmark CPU candidates and optimization variants under comparable conditions. (2026-11-13: VexiiRiscv variants measured in simulation and on the board; VexRiscv-SMP synthesis-only by decision, RV32 cannot run the RV64 stack: docs/decisions/0007, owner to confirm scope)
+- [x] Benchmark CPU candidates and optimization variants under comparable conditions. (2026-11-13: VexiiRiscv variants measured in simulation and on the board; VexRiscv-SMP synthesis-only by decision, RV32 cannot run the RV64 stack: docs/decisions/0007; owner confirmed 2026-11-14)
   - Acceptance: CPU decision record contains measured resource/performance results and final approval.
-- [x] Tune CPU clock, cache sizes, interconnect widths/arbitration, and DDR settings one variable at a time. (2026-11-13: clock, L1/L2 and DDR4 rate measured one at a time; width and arbitration have no alternative to compare: docs/decisions/0007, owner to confirm)
+- [x] Tune CPU clock, cache sizes, interconnect widths/arbitration, and DDR settings one variable at a time. (2026-11-13: clock, L1/L2 and DDR4 rate measured one at a time; width and arbitration have no alternative to compare: docs/decisions/0007; owner confirmed 2026-11-14)
   - Acceptance: each accepted change meets the README resource/performance rule and passes timing closure plus functional regression.
 - [-] Confirm final MVP acceptance criteria in README. (2026-11-12: docs/mvp-acceptance.md: 7 PASS, 4 PARTIAL, 0 open)
   - Acceptance: checklist is backed by logs/reports and physical-board evidence; unresolved items are clearly marked.
