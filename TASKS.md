@@ -140,7 +140,7 @@
 
 ## Phase 3 — Minimal hardware design
 
-- [-] Establish Vivado project generation and reproducible command-line build. (build_soc.tcl, scripts/fetch_sources.sh; a build from a clean checkout has not been repeated)
+- [-] Establish Vivado project generation and reproducible command-line build. (build_soc.tcl, scripts/fetch_sources.sh; clean-clone chain (fetch, ROM, netlist, Vivado) reproduced identical netlist, WNS +0.001/WHS +0.011; submodule fetch fixed; Linux image not rebuilt from the clone)
   - Acceptance: clean checkout creates a project/build without GUI-only manual steps; Vivado version and license prerequisites are documented.
 - [x] Implement clock/reset infrastructure and UART. (16/16 cold boots, resets recover)
   - Acceptance: timing constraints are explicit; serial console is reliable across reset and reboot.
@@ -148,7 +148,7 @@
   - Acceptance: calibration passes repeatedly; memory map and usable capacity are correct; memory stress test has no errors.
 - [x] Add CPU, cache/MMU configuration, timer, interrupt controller, and interconnect. (VexiiRiscv RV64IMA, hub + 128 KiB L2, CLINT, PLIC, Sv39; Linux boots)
   - Acceptance: exact configuration is Linux-capable and boot firmware can enter the kernel with a valid memory map.
-- [-] Add a deterministic address map and device-tree generation/check. (2026-11-12: tests/dts/run.sh checks the DTS against an independent map table; the DTS is still hand-written, not generated from RTL)
+- [x] Add a deterministic address map and device-tree generation/check. (2026-11-13: tests/dts/run.sh checks the DTS against an independent map table and tests/dts/xbar_map.py checks the crossbar ranges in build_soc.tcl against tests/dts/xbar_map.csv, both in scripts/ci.sh; the DTS stays hand-written by decision, the check is the guard)
   - Acceptance: generated DTB matches the synthesized hardware; stale DTBs are rejected by build/release checks.
 - [x] Add SD storage controller and minimum boot interface (2026-10-30: SPI-mode SD, spi_sifive.v + ROM driver; ROM boots OpenSBI+Linux from the card
   on the board; Linux mounts a read-only ext4 root and a persistent /data; decisions/0005, build `vv_sd2`). Not measured: ROM read speed, long-run reliability.
@@ -162,13 +162,13 @@
   - Acceptance: boot stages, entry addresses, image formats, and failure recovery are documented.
 - [x] Build a minimal Linux kernel with the required CPU architecture, console, timer, interrupt, memory, SD, and rootfs support. (linux/kernel/configure.sh, v6.18.59)
   - Acceptance: kernel config is versioned; kernel boots far enough to mount rootfs.
-- [-] Create the device tree and validate it with kernel/device-tree tooling. (dtc builds warning-free and tests/dts checks the map; dtbs_check bindings validation not run)
+- [x] Create the device tree and validate it with kernel/device-tree tooling. (2026-11-13: dtc warning-free, address/IRQ map test, tests/dts/dtbs_check.sh against the v6.18.59 binding schemas: 12 documented known findings, docs/validation/dtbs-check.md)
   - Acceptance: CPU, memory, UART, interrupt controller, timer, SD, and Ethernet nodes match the hardware map.
-- [-] Build the selected Buildroot/Yocto userspace. (reproducible config, 2 MB rootfs; the package list is packages-file-list.txt, no legal-info/source manifest yet)
+- [x] Build the selected Buildroot/Yocto userspace. (2026-11-13: reproducible config, 3.4 MB rootfs, scripts/legal_info.sh produced the licence and source manifest: docs/legal/)
   - Acceptance: reproducible image, package manifest, image size, and source/version manifest are generated.
 - [x] Boot Linux from SD and establish serial-console recovery. (repeated cold and warm boots, 16/16; ROM falls back to the UART monitor)
   - Acceptance: repeated cold boot and warm reboot; expected RAM is visible; rootfs is writable only where intended.
-- [ ] Add network-assisted development boot (TFTP/NFS or equivalent).
+- [-] Add network-assisted development boot (TFTP/NFS or equivalent). (2026-11-13: NFS-root variant built: linux/dts/hg-xcku5p-sdnfs.dts, KNFS=1 kernel option, scripts/nfs_dev_setup.sh; the host export needs root, so the boot is not yet tested: owner runs `sudo scripts/nfs_dev_setup.sh`)
   - Acceptance: documented boot command and repeatable development cycle; SD remains the known-good fallback.
 
 ## Phase 5 — Minimum viable hardware validation
