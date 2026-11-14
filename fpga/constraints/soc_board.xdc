@@ -129,3 +129,7 @@ set_false_path -to [get_ports hdmi_oe]
 # The pixel and 5x clocks come from one MMCM (related); everything else crosses with synchronisers or stable-data handshakes (toggle + held value).
 set_clock_groups -asynchronous -group [get_clocks -of_objects [get_nets per_clk]] \
     -group [list [get_clocks -of_objects [get_nets pclk]] [get_clocks -of_objects [get_nets clk5]]]
+
+# Interrupt synchronisers: single-bit levels from per_clk into the first stage of a two-flop ASYNC_REG synchroniser in the CPU clock domain are not
+# timed as a synchronous path.
+set_false_path -to [get_pins u_irq_sync/s1_reg[*]/D]
