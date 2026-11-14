@@ -30,7 +30,7 @@ The sales description lists the following. The authoritative source for pinout, 
 | Listed component/interface | Initial software/firmware intent |
 |---|---|
 | AMD/Xilinx XCKU5P-FFVB676-2-i | Vivado device/part and timing target; confirm exact ordering-code interpretation in the project constraints |
-| 2 × MT40A256M16 DDR4 | Determine topology, controller interface, capacity, address map, calibration, and achievable bandwidth from schematic/controller validation |
+| 2 × MT40A256M16GE-075E DDR4 (owner-stated; 32-bit total bus) | Two x16 4 Gb devices side by side give a 32-bit bus and 1 GiB. Confirm byte-lane/bank mapping, reference clock, calibration, and achievable data rate from schematic/controller validation |
 | HDMI | Defer until Linux baseline; identify whether input, output, or both are actually routed and what PHY/bridge logic exists |
 | Gigabit Ethernet | MVP networking if PHY/interface and clock/reset details are confirmed |
 | FMC HPC | Document pin assignments and electrical constraints; future custom-I/O workstream |
@@ -41,7 +41,7 @@ The sales description lists the following. The authoritative source for pinout, 
 | Serial/JTAG over USB-C | Console and FPGA programming/debug path; confirm which USB bridge and interfaces are present |
 | Buzzer | GPIO/PWM or dedicated controller, based on schematic |
 | 100G optical port | Out of MVP; document transceiver/GTY, reference-clock, MAC/PCS, licensing, and board routing requirements |
-| Flash | FPGA configuration storage and/or other flash; identify device, boot mode, capacity, partitions, and programming path |
+| MT25QU256ABA1EW9-0SIT QSPI flash (owner-stated) | FPGA configuration storage: 256 Mb, 1.8 V. Confirm config-bank voltage, boot-mode straps, and programming path from schematic |
 | DS18820 temperature sensor (as listed) | Verify exact component identity and interface against schematic; do not assume spelling implies a specific supported driver |
 | BL24C02 EEPROM | Confirm bus/address and use read-only access during discovery |
 | Four-bit key input | GPIO/input with polarity and debounce defined |
@@ -76,6 +76,21 @@ A generated SoC is acceptable if it can emit deterministic RTL/constraints and a
 6. **Validation layer:** simulation, lint/config checks, synthesis reports, timing reports, hardware smoke/performance tests.
 7. **Release layer:** checksummed and versioned bitstream, boot firmware, kernel, DTB, rootfs, build metadata, and recovery instructions.
 
+### Current implementation (2026-11-12)
+
+Board-tested; details and evidence in `TASKS.md` and `docs/validation/`.
+- **CPU:** VexiiRiscv RV64IMA (Linux 6.x, OpenSBI, Buildroot) with the coherency hub and a 128 KiB 4-way L2 (UltraRAM), CPU and DDR4 controller on one 333.33 MHz clock (DDR4-2667), timing met.
+  The L2 was chosen on Linux workloads (gzip 1.55x, shell loop 1.28x, sequential and compute-bound jobs unchanged) for +2.2k LUT and 4 URAM (`docs/decisions/0006-l2-cache.md`).
+- **Memory:** two MT40A256M16GE-075E (4 Gb x16) on a 32-bit bus, 1 GiB; capacity confirmed by an 8 Gb-controller aliasing test and a 992 MiB hash sweep with 0 errors (`docs/validation/ddr4-bringup.md`).
+- **Peripherals:** UART, SD card (SPI), Ethernet GMII (LiteEth; iperf3 RX 38 Mb/s, CPU-bound, see docs/validation/ethernet-bringup.md), AXI GPIO/Timer (DS18B20, buzzer, fan PWM and tach), MS5607 barometer (SPI), SYSMON die temperature with a fan governor,
+  user LEDs, keys K1-K4 and DIP switches SW1-SW4 (Linux gpio-leds / gpio-keys-polled), two AXI IIC buses (bus 1: two BL24C256 EEPROMs at 0x50/0x51; bus 0 / U4 not detected, owner to check).
+  The UART interrupt is held until the CPU reads the UART (`fpga/rtl/irq_hold.v`); the PLIC drops a one-cycle pulse that arrives during an in-flight interrupt.
+- **Boot:** the FPGA configures from the QSPI flash (SPIx4, 51 MHz), the boot ROM loads OpenSBI, kernel and root filesystem from the SD card. The flash on this board probes as a 128 Mb part (JEDEC 0x20BB18),
+  not the 256 Mb part named above; a tested script restores the vendor image (`factory/`). Ethernet receive copy engine on the coherent hub (RX 46 Mb/s, `docs/validation/eth-dma.md`). Not yet implemented: PCIe, FMC, QSFP, HDMI.
+- **Tooling:** `scripts/ci.sh` (shellcheck, clang-format, ruff, device-tree address/IRQ map, rootfs and RTL tests; also run by GitHub Actions), `scripts/fetch_sources.sh` (pinned external sources),
+  `tools/build_report.py` (timing/DRC report.json), `tools/smoke.py` (18 hardware checks over the console), `scripts/release.sh` (dry run only; versioning scheme not yet approved).
+- **Simulation:** `tests/rtl/run.sh` (unit tests with mutants) and `tests/soc/run.sh` (Verilator, default SoC netlist `soc_l2u_128k_w4` from `fpga/scripts/cpu/gen_default_soc.sh`).
+
 ### Memory and boot strategy
 
 Normal boot target:
@@ -95,12 +110,10 @@ The CPU is a design gate. No candidate is approved until its **exact configurati
 
 | Candidate | Linux viability gate | Expected strengths | Risks/costs | Current position |
 |---|---|---|---|---|
-| **AMD MicroBlaze V** | Verify the exact core's MMU/privilege/interrupt/timer configuration and an upstream or supportable Linux port. Do not infer Linux capability from RISC-V ISA compatibility. | AMD/Vivado-centric integration, familiar vendor toolchain, potentially convenient debug and IP integration | Linux support and MMU capability are decisive gates; vendor-specific IP/tool flow; 32-bit ISA may constrain application ecosystem | **Conditional candidate**; reject as main Linux CPU if it cannot run the chosen upstream Linux kernel without an unsupported private port |
 | **VexRiscv / VexRiscv-SMP** | Existing Linux-capable configurations and Linux-on-LiteX examples exist; verify current kernel port, SMP status, cache/MMU configuration, and generated SoC compatibility | Strong FPGA-oriented configurability, established open-source RISC-V ecosystem, good starting point for resource/performance exploration | Common Linux-capable configuration is RV32; generated RTL/tool dependencies and integration may be nontrivial; timing/area depend heavily on configuration | Strong resource-efficient baseline |
 | **VexiiRiscv** | Verify current Linux-capable configuration, upstream kernel compatibility, toolchain, debug, and maintenance state at selection time | More ambitious RISC-V design with configurability and potential performance improvements over smaller configurations | Maturity and exact feature integration must be validated; potentially higher area and timing risk | Candidate where performance justifies extra area |
-| **CVA6 (Ariane)** | Confirm current upstream Linux support, required privileged ISA/MMU/cache features, and exact integration path | 64-bit application-class RISC-V, standard software ecosystem, useful CPU-heavy workloads | Larger integration and fabric cost; timing closure at high frequency may be harder; board-specific SoC integration required | Strong 64-bit performance candidate |
-| **Rocket Chip** | Select a Linux-capable 64-bit configuration and verify generated system, Linux, and toolchain compatibility | Highly configurable 64-bit RISC-V ecosystem; good for architecture research and custom SoC experiments | Chisel/Scala generation and integration complexity; configuration management and build reproducibility need care | Retain if configurability is a requirement, not merely because it is available |
-| **MicroBlaze (classic)** | Check Linux support for exact configuration and current maintenance status; do not conflate it with MicroBlaze V | Deep Vivado integration and established bare-metal/RTOS use | Vendor-specific ISA/ecosystem and uncertain fit for current upstream-LTS Linux goal | Not preferred unless a proven Linux-capable reference design is found |
+| **CVA6 (Ariane)** | Dropped from the study by project decision (2026-10-18): synthesised at ~4.6x the LUTs of VexiiRiscv RV32 with no published IPC advantage (docs/decisions/0001) | 64-bit application-class RISC-V | Large fabric cost, timing | **Dropped** |
+| **MicroBlaze (classic)** | Check Linux support for exact configuration and current maintenance status; MicroBlaze V is out of scope | Deep Vivado integration and established bare-metal/RTOS use | Vendor-specific ISA/ecosystem and uncertain fit for current upstream-LTS Linux goal | Not preferred unless a proven Linux-capable reference design is found |
 | **PicoRV32, Ibex, NEORV32** | Generally not a suitable default main CPU for full MMU-based Linux without a specific demonstrated configuration/port | Compact, understandable auxiliary controllers and peripheral CPUs | Usually unsuitable for the requested conventional Linux userspace | Exclude from main-CPU shortlist; consider for auxiliary control only |
 
 ### How to make the final decision
@@ -115,7 +128,7 @@ Run a controlled evaluation on the same board constraints and as comparable a me
 
 Apply the project acceptance rule to each optimization: a 10% resource increase for a 100% performance increase is accepted; 10% resource for 10% performance requires a clear functional, simplicity, power, or workflow benefit; 10% resource for less than 10% performance is rejected. Define measurement noise and benchmark repeatability before applying this rule.
 
-**Preliminary recommendation for final approval:** evaluate **CVA6** and **VexRiscv/VexiiRiscv** as the primary finalists. Treat **MicroBlaze V** as a serious vendor-integration candidate only if its exact Linux/MMU support is verified. Favor the VexRiscv family if a Linux-capable configuration achieves the required workload with materially more fabric left over; favor CVA6 if 64-bit CPU performance and a conventional application-class environment provide a measured advantage that justifies the extra resources. Do not select a winner from nominal clock rate or core-only LUT counts.
+**Approved finalists (2026-10-18):** **VexiiRiscv** (RV32 or RV64; 64-bit preferred, BRAM to be minimised unless the performance gain is large) and **VexRiscv-SMP** (RV32 baseline). CVA6, MicroBlaze V and Rocket Chip are out of the study. Favor the smallest configuration that meets the workload; do not select a winner from nominal clock rate or core-only LUT counts.
 
 ## Linux build-system trade study
 
@@ -155,7 +168,7 @@ Record the installed package list and image size. Optional debug packages should
 
 ## CI/CD proposal
 
-Use **GitHub Actions for repository orchestration plus a dedicated self-hosted Linux runner** with Vivado and an appropriate license. Keep the CI scripts portable so another CI coordinator can be used later.
+Use **GitHub Actions hosted runners** for repository checks only. **No self-hosted runner is established** (project decision): Vivado builds and hardware smoke tests are run locally by the maintainer using the same scripts the CI would call, and their reports/logs are recorded in the repository or release notes. Keep scripts portable so a runner can be added later if the decision changes.
 
 ### Pull-request checks (fast)
 
@@ -166,16 +179,16 @@ Use **GitHub Actions for repository orchestration plus a dedicated self-hosted L
 - Ensure all source dependencies are pinned to tags/commits and all local patches apply cleanly.
 - Do not require physical board access for ordinary pull requests.
 
-### Self-hosted Vivado job
+### Local Vivado build (no CI runner)
 
-- Run in a dedicated, least-privilege runner with an explicit Vivado version and license configuration.
+- Run locally with an explicit Vivado version (see `docs/versions.md`) via a single scripted entry point.
 - Synthesize and implement the baseline design; capture utilization, timing, clock interaction, and DRC reports.
 - Fail on errors, unexpected critical warnings, missing constraints, or timing violations for required clocks.
 - Compare resource and timing reports against checked-in baselines with reviewed tolerances; never silently overwrite baselines.
 - Cache downloaded source archives/toolchain outputs only when cache keys include versions and hashes. Do not cache opaque Vivado state as a substitute for reproducible builds.
-- Avoid exposing secrets/license details in logs and never execute untrusted fork PR code on a privileged hardware runner.
+- Avoid exposing secrets/license details in logs or committed reports.
 
-### Nightly/weekly hardware jobs
+### Local hardware smoke tests
 
 - Flash/load a known bitstream and boot image on the board.
 - Capture UART output and require a boot marker plus self-test pass.
@@ -201,9 +214,7 @@ Use **GitHub Actions for repository orchestration plus a dedicated self-hosted L
 ├── .gitignore
 ├── .github/
 │   └── workflows/
-│       ├── pr-checks.yml
-│       ├── vivado-build.yml
-│       └── hardware-smoke.yml
+│       └── pr-checks.yml
 ├── docs/
 │   ├── architecture.md
 │   ├── versions.md
@@ -274,7 +285,7 @@ The MVP is complete when all applicable criteria below pass on the physical boar
 6. Board GPIO/LED/switch access works; I²C discovery is safe and identified EEPROM/sensor devices are validated against the schematic.
 7. DDR and SD tests complete without errors; network throughput and CPU/memory benchmarks are recorded.
 8. FPGA resource and timing reports meet the agreed baseline; no required clock has an unexplained timing failure.
-9. CI checks and the self-hosted Vivado build pass; hardware smoke test is automated or its manual procedure and evidence are documented.
+9. Hosted CI checks pass; the local Vivado build passes with archived reports; hardware smoke test is scripted or its manual procedure and evidence are documented.
 10. Every local kernel patch has an owner, rationale, test, and upstream disposition.
 11. Release artifacts include checksums, build manifest, version information, and recovery instructions.
 
@@ -283,7 +294,7 @@ The MVP is complete when all applicable criteria below pass on the physical boar
 - No known-good board-specific reference design may exist.
 - DDR4 controller and PHY integration/calibration may dominate bring-up time.
 - A selected CPU may lack the exact MMU/Linux configuration expected, or its integration may be too costly.
-- Vivado licensing, version pinning, and self-hosted runner reliability can constrain CI.
+- Vivado licensing and version pinning constrain reproducibility; Vivado builds are local-only (no CI runner).
 - Sensor/component names in marketing material may be inaccurate; confirm exact part numbers from schematics.
 - Some interfaces may need licensed AMD IP or substantial custom logic.
 - Linux driver availability depends on the actual bus wiring and controller implementation, not the component name alone.

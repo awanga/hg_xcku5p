@@ -1,0 +1,257 @@
+// SPDX-License-Identifier: MIT
+/*
+ * HG-XCKU5P minimal SoC (included by hg-xcku5p.dts and hg-xcku5p-sdroot.dts): VexiiRiscv RV64IMA (no C/F/D), CPU on the DDR4 user clock.
+ * Memory map is fixed by fpga/rtl/soc_top.v and fpga/scripts/cpu/gen_soc.sh; keep them consistent.
+ * The first MiB of DDR4 holds the ROM loader's stack until OpenSBI takes over at 0x40100000.
+ */
+/ {
+	#address-cells = <1>;
+	#size-cells = <1>;
+	compatible = "hamgeek,hg-xcku5p", "vexiiriscv";
+	model = "HG-XCKU5P VexiiRiscv";
+
+	chosen {
+		stdout-path = "serial0:230400n8";
+	};
+
+	aliases {
+		serial0 = &uart0;
+	};
+
+	cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+		timebase-frequency = <333333333>;
+
+		cpu0: cpu@0 {
+			device_type = "cpu";
+			compatible = "spinalhdl,vexiiriscv", "riscv";
+			reg = <0>;
+			riscv,isa = "rv64ima_zicsr_zifencei";
+			riscv,isa-base = "rv64i";
+			riscv,isa-extensions = "i", "m", "a", "zicsr", "zifencei";
+			mmu-type = "riscv,sv39";
+			status = "okay";
+
+			cpu0_intc: interrupt-controller {
+				#interrupt-cells = <1>;
+				interrupt-controller;
+				compatible = "riscv,cpu-intc";
+			};
+		};
+	};
+
+	per_clk: clock-100m {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <100000000>;
+	};
+
+	/* flags 6 = GPIO_OPEN_DRAIN (single ended, open drain) */
+	onewire {
+		compatible = "w1-gpio";
+		gpios = <&gpio 0 6>;
+	};
+
+	beeper {
+		compatible = "gpio-beeper";
+		gpios = <&gpio 1 0>;
+	};
+
+	/* 4-wire fan: PWM 25 kHz, tach 2 pulses per revolution on the GPIO interrupt (falling edge) */
+	fan {
+		compatible = "pwm-fan";
+		pwms = <&pwm 0 40000 0>;
+		interrupt-parent = <&gpio>;
+		interrupts = <2 2>;
+		pulses-per-revolution = <2>;
+	};
+
+	/* LED0-LED7 on the board: red, active high, off by default */
+	leds {
+		compatible = "gpio-leds";
+		led0 { label = "led0"; gpios = <&gpio 3 0>; default-state = "off"; };
+		led1 { label = "led1"; gpios = <&gpio 4 0>; default-state = "off"; };
+		led2 { label = "led2"; gpios = <&gpio 5 0>; default-state = "off"; };
+		led3 { label = "led3"; gpios = <&gpio 6 0>; default-state = "off"; };
+		led4 { label = "led4"; gpios = <&gpio 7 0>; default-state = "off"; };
+		led5 { label = "led5"; gpios = <&gpio 8 0>; default-state = "off"; };
+		led6 { label = "led6"; gpios = <&gpio 9 0>; default-state = "off"; };
+		led7 { label = "led7"; gpios = <&gpio 10 0>; default-state = "off"; };
+	};
+
+	/*
+	 * Pushbuttons K1-K4 (KEY_1..KEY_4, active high) and DIP switches SW1-SW4 (reported as BTN_0..BTN_3 while the switch reads 1).
+	 * K1 is also the SoC reset: pressing it resets the DDR4 controller and holds the CPU in reset, so Linux only ever sees it released.
+	 * Polled every 20 ms, which also debounces.
+	 */
+	keys {
+		compatible = "gpio-keys-polled";
+		poll-interval = <20>;
+		key-k1 { label = "K1"; gpios = <&gpio 11 0>; linux,code = <2>; };
+		key-k2 { label = "K2"; gpios = <&gpio 12 0>; linux,code = <3>; };
+		key-k3 { label = "K3"; gpios = <&gpio 13 0>; linux,code = <4>; };
+		key-k4 { label = "K4"; gpios = <&gpio 14 0>; linux,code = <5>; };
+		switch-1 { label = "SW1"; gpios = <&gpio 15 0>; linux,code = <0x100>; };
+		switch-2 { label = "SW2"; gpios = <&gpio 16 0>; linux,code = <0x101>; };
+		switch-3 { label = "SW3"; gpios = <&gpio 17 0>; linux,code = <0x102>; };
+		switch-4 { label = "SW4"; gpios = <&gpio 18 0>; linux,code = <0x103>; };
+	};
+
+	memory@40000000 {
+		device_type = "memory";
+		reg = <0x40000000 0x40000000>;
+	};
+
+	soc {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		compatible = "simple-bus";
+		ranges;
+
+		clint: timer@f0010000 {
+			compatible = "sifive,clint0", "riscv,clint0";
+			reg = <0xf0010000 0x10000>;
+			interrupts-extended = <&cpu0_intc 3>, <&cpu0_intc 7>;
+		};
+
+		plic: interrupt-controller@f0c00000 {
+			compatible = "sifive,plic-1.0.0", "riscv,plic0";
+			reg = <0xf0c00000 0x400000>;
+			#interrupt-cells = <1>;
+			#address-cells = <0>;
+			interrupt-controller;
+			interrupts-extended = <&cpu0_intc 11>, <&cpu0_intc 9>;
+			riscv,ndev = <31>;
+		};
+
+		/* SD card socket in SPI mode through the SiFive-compatible master (fpga/rtl/spi_sifive.v) */
+		spi0: spi@f8002000 {
+			compatible = "sifive,fu540-c000-spi", "sifive,spi0";
+			reg = <0xf8002000 0x1000>;
+			interrupt-parent = <&plic>;
+			interrupts = <2>;
+			clocks = <&per_clk>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			sifive,fifo-depth = <8>;
+			sifive,max-bits-per-word = <8>;
+
+			mmc@0 {
+				compatible = "mmc-spi-slot";
+				reg = <0>;
+				spi-max-frequency = <25000000>;
+				voltage-ranges = <3300 3300>;
+				non-removable;
+			};
+		};
+
+		/* MS5607 barometer on its own SiFive-compatible SPI master (SPI mode 0, <= 20 MHz per the datasheet) */
+		spi1: spi@f8005000 {
+			compatible = "sifive,fu540-c000-spi", "sifive,spi0";
+			reg = <0xf8005000 0x1000>;
+			interrupt-parent = <&plic>;
+			interrupts = <4>;
+			clocks = <&per_clk>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			sifive,fifo-depth = <8>;
+			sifive,max-bits-per-word = <8>;
+
+			barometer@0 {
+				compatible = "meas,ms5607";
+				reg = <0>;
+				spi-max-frequency = <10000000>;
+			};
+		};
+
+		/*
+		 * AXI GPIO: 0 DS18B20 1-Wire (open drain, 4.7 k pull-up on the board), 1 buzzer (active high), 2 fan tach input,
+		 * 3-10 LED0-7 (active high), 11-14 KEY_PL0-3 (active high), 15-18 SW1-4 (fpga/rtl/board_gpio_map.v)
+		 */
+		gpio: gpio@f8003000 {
+			compatible = "xlnx,xps-gpio-1.00.a";
+			reg = <0xf8003000 0x1000>;
+			interrupt-parent = <&plic>;
+			interrupts = <5>;
+			interrupt-controller;
+			#interrupt-cells = <2>;
+			gpio-controller;
+			#gpio-cells = <2>;
+			xlnx,gpio-width = <19>;
+			xlnx,is-dual = <0>;
+			xlnx,all-inputs = <0>;
+			xlnx,all-outputs = <0>;
+			xlnx,dout-default = <0>;
+			xlnx,tri-default = <0xffffffff>;
+			xlnx,interrupt-present = <1>;
+		};
+
+		/*
+		 * AXI IIC masters (100 kHz). i2c0 = PL_I2C with a BL24C02 (address strap not read; the bus is scanned first). i2c1 = the second
+		 * bus with two BL24C256. No EEPROM nodes are declared: the buses are scanned read-only first and any at24 node added later is marked read-only.
+		 */
+		i2c0: i2c@f8006000 {
+			compatible = "xlnx,xps-iic-2.00.a";
+			reg = <0xf8006000 0x1000>;
+			interrupt-parent = <&plic>;
+			interrupts = <6>;
+			clocks = <&per_clk>;
+			clock-names = "pclk";
+			#address-cells = <1>;
+			#size-cells = <0>;
+		};
+
+		i2c1: i2c@f8007000 {
+			compatible = "xlnx,xps-iic-2.00.a";
+			reg = <0xf8007000 0x1000>;
+			interrupt-parent = <&plic>;
+			interrupts = <7>;
+			clocks = <&per_clk>;
+			clock-names = "pclk";
+			#address-cells = <1>;
+			#size-cells = <0>;
+		};
+
+		/* AXI Timer in PWM mode; fpga/rtl/soc_top.v inverts its output for the fan's NMOS driver, so the fan sees this duty directly */
+		pwm: pwm@f8004000 {
+			compatible = "xlnx,xps-timer-1.00.a";
+			reg = <0xf8004000 0x1000>;
+			clocks = <&per_clk>;
+			clock-names = "s_axi_aclk";
+			#pwm-cells = <3>;
+			xlnx,count-width = <32>;
+			xlnx,one-timer-only = <0>;
+		};
+
+		/*
+		 * LiteEth MAC (fpga/ip/liteeth/liteeth_gmii.yml) behind the RTL8211EG in GMII mode. MDC/MDIO are not wired, so there is
+		 * no PHY node: the driver does not use phylib and the link is whatever the PHY auto-negotiates. The MAC address is a
+		 * locally administered default; a bootloader or the user should override it when more than one board shares a LAN.
+		 */
+		eth0: ethernet@f8009000 {
+			compatible = "litex,liteeth";
+			reg = <0xf8009000 0x100>, <0xf8008800 0x100>, <0xf800c000 0x2000>, <0xf800e000 0x100>;
+			reg-names = "mac", "mdio", "buffer", "dma";
+			interrupt-parent = <&plic>;
+			interrupts = <3>, <8>;
+			interrupt-names = "mac", "dma";
+			litex,rx-slots = <2>;
+			litex,tx-slots = <2>;
+			litex,slot-size = <0x800>;
+			local-mac-address = [02 48 47 4b 55 35];
+		};
+
+		uart0: serial@f8000000 {
+			compatible = "xlnx,xps-uartlite-1.00.a";
+			reg = <0xf8000000 0x1000>;
+			interrupt-parent = <&plic>;
+			interrupts = <1>;
+			current-speed = <230400>;
+			clock-frequency = <100000000>;
+			xlnx,baudrate = <230400>;
+			xlnx,data-bits = <8>;
+			xlnx,use-parity = <0>;
+		};
+	};
+};

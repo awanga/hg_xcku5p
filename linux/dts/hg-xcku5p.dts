@@ -1,0 +1,10 @@
+// SPDX-License-Identifier: MIT
+/* Boot with the initramfs embedded in the kernel image (loader or SD boot). */
+/dts-v1/;
+#include "hg-xcku5p.dtsi"
+
+/ {
+	chosen {
+		bootargs = "console=ttyUL0,230400 earlycon=sbi rdinit=/sbin/init";
+	};
+};

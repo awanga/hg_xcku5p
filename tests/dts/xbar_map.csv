@@ -1,0 +1,14 @@
+# Peripheral crossbar map, independent of the Tcl: master index, base address, address width in bits (window = 2^bits), range index.
+# Source: header of fpga/rtl/soc_top.v and docs/validation/soc-minimal.md. build_soc.tcl must configure exactly these ranges.
+0,0xF8000000,12,0
+1,0xF8001000,12,0
+2,0x10000000,16,0
+3,0xF8002000,12,0
+4,0xF8008000,14,0
+4,0xF800C000,13,1
+5,0xF8003000,12,0
+6,0xF8004000,12,0
+7,0xF8005000,12,0
+8,0xF8006000,12,0
+9,0xF8007000,12,0
+10,0xF800E000,12,0

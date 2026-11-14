@@ -1,0 +1,10 @@
+// SPDX-License-Identifier: MIT
+/* Debug variant of hg-xcku5p-sdroot.dts: MMC core and mmc_spi dynamic debug messages on the console (build with KDEBUG=1). */
+/dts-v1/;
+#include "hg-xcku5p.dtsi"
+
+/ {
+	chosen {
+		bootargs = "console=ttyUL0,230400 earlycon=sbi root=/dev/mmcblk0p1 rootwait ro rootfstype=ext4 ignore_loglevel dyndbg=\"file drivers/mmc/core/* +p; file drivers/mmc/host/mmc_spi.c +p\"";
+	};
+};

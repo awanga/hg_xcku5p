@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: MIT
+# Hosted checks only: no Vivado, no board, no vendor IP (project decision, TASKS.md).
+name: checks
+on:
+  pull_request:
+  push:
+    branches: [develop, main]
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends shellcheck clang-format device-tree-compiler \
+            iverilog verilator python3-pip
+          pip install --break-system-packages ruff==0.16.4
+      - name: Run checks
+        run: bash scripts/ci.sh

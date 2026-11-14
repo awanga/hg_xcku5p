@@ -1,0 +1,107 @@
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+# Fan governor: sets the pwm-fan duty (0-255) from the FPGA die temperature (SYSMON code in the board registers at 0xF8001020).
+#   below 30 C stopped; 30-45 C quiet ramp 38 -> 61 (15-24 %); 45-65 C 77 -> 128 (30-50 %); 65-80 C 128 -> 217 (50-85 %);
+#   80-85 C 217 -> 255; from 85 C full speed. Speed increases at once. Hysteresis: the temperature the curve sees follows a rise
+#   immediately but a fall only after it is HYST below the highest value seen (then it trails the real temperature by HYST), and the
+#   duty falls by at most STEP_DOWN per cycle.
+# Fail-safe: an unreadable or implausible reading, or the governor stopping, sets full speed. A SIGKILL cannot be trapped, so the fan
+# then stays at its last duty.
+# usage: fan-governor [-1]   (-1: one cycle, print "temp_mC duty", for debugging)   Settings may be overridden in /etc/default/fan-governor.
+HYST=${HYST:-4000}
+STEP_DOWN=${STEP_DOWN:-10}
+PERIOD=${PERIOD:-2}
+TEMP_REG=${TEMP_REG:-0xF8001020}
+
+# die_temp_mC <code>: SYSMONE4 transfer function, degC = code * 509.3140064 / 65536 - 280.2308787
+die_temp_mC() {
+	echo $(($1 * 509314 / 65536 - 280231))
+}
+
+# lerp <t> <t0> <t1> <d0> <d1>: integer linear interpolation of the duty
+lerp() {
+	echo $(($4 + ($5 - $4) * ($1 - $2) / ($3 - $2)))
+}
+
+# target_duty <temp_mC>: the duty wanted at this (hysteresis-filtered) temperature, before the ramp-down limit
+target_duty() {
+	t=$1
+	if [ "$t" -ge 85000 ]; then
+		echo 255
+	elif [ "$t" -ge 80000 ]; then
+		lerp "$t" 80000 85000 217 255
+	elif [ "$t" -ge 65000 ]; then
+		lerp "$t" 65000 80000 128 217
+	elif [ "$t" -ge 45000 ]; then
+		lerp "$t" 45000 65000 77 128
+	elif [ "$t" -ge 30000 ]; then
+		lerp "$t" 30000 45000 38 61
+	else
+		echo 0
+	fi
+}
+
+# held_temp <temp_mC> <held temp_mC>: follows a rise at once, a fall only once it is HYST below the held value
+held_temp() {
+	if [ "$1" -gt "$2" ]; then
+		echo "$1"
+	elif [ "$1" -lt $(($2 - HYST)) ]; then
+		echo $(($1 + HYST))
+	else
+		echo "$2"
+	fi
+}
+
+# next_duty <held temp_mC> <current duty>: target with the ramp-down limit applied
+next_duty() {
+	want=$(target_duty "$1")
+	if [ "$want" -lt "$2" ]; then
+		floor=$(($2 - STEP_DOWN))
+		[ "$want" -lt "$floor" ] && want=$floor
+	fi
+	echo "$want"
+}
+
+find_pwm() {
+	for h in /sys/class/hwmon/hwmon*; do
+		[ "$(cat "$h/name" 2>/dev/null)" = pwmfan ] && { echo "$h/pwm1"; return 0; }
+	done
+	return 1
+}
+
+read_temp() {
+	code=$(devmem "$TEMP_REG" 32 2>/dev/null) || return 1
+	code=$((code))
+	# 0 = no reading yet, 0xFFFF = bus fault; below -40 C or above 125 C is outside the sensor's range
+	if [ "$code" -eq 0 ] || [ "$code" -ge 65535 ]; then return 1; fi
+	t=$(die_temp_mC "$code")
+	if [ "$t" -lt -40000 ] || [ "$t" -gt 125000 ]; then return 1; fi
+	echo "$t"
+}
+
+# FAN_GOV_LIB=1 with `.` loads only the functions (used by tests/rootfs/fan_governor_test.sh)
+if [ -n "${FAN_GOV_LIB:-}" ]; then return 0 2>/dev/null || exit 0; fi
+[ -r /etc/default/fan-governor ] && . /etc/default/fan-governor
+
+pwm=$(find_pwm) || { echo "fan-governor: no pwm-fan hwmon device" >&2; exit 1; }
+trap 'echo 255 >"$pwm"; exit 0' INT TERM EXIT
+echo 1 >"${pwm}_enable" 2>/dev/null
+duty=$(cat "$pwm")
+held=-100000
+while :; do
+	if temp=$(read_temp); then
+		held=$(held_temp "$temp" "$held")
+		duty=$(next_duty "$held" "$duty")
+	else
+		temp=-
+		held=125000
+		duty=255
+	fi
+	echo "$duty" >"$pwm"
+	if [ "${1:-}" = "-1" ]; then
+		echo "$temp $duty"
+		trap - EXIT
+		exit 0
+	fi
+	sleep "$PERIOD"
+done

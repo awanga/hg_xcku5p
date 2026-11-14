@@ -1,0 +1,14 @@
+# Linux kernel style (subset); see CLAUDE.md. 80 columns is review guidance, 100 the limit.
+BasedOnStyle: LLVM
+UseTab: Always
+TabWidth: 8
+IndentWidth: 8
+ContinuationIndentWidth: 8
+BreakBeforeBraces: Linux
+AllowShortIfStatementsOnASingleLine: false
+AllowShortLoopsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: None
+IndentCaseLabels: false
+ColumnLimit: 100
+SortIncludes: false
+AlignAfterOpenBracket: Align

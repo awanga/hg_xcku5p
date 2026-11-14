@@ -1,0 +1,14 @@
+// SPDX-License-Identifier: MIT
+/*
+ * Development boot: kernel, OpenSBI and device tree come from the SD card as usual, the root filesystem is NFS-mounted from the
+ * development host (192.168.1.167, export /srv/hg-rootfs; scripts/nfs_dev_setup.sh), so a rootfs change needs no SD write.
+ * Needs a kernel built with KNFS=1. The SD card's /data partition is still mounted by init.
+ */
+/dts-v1/;
+#include "hg-xcku5p.dtsi"
+
+/ {
+	chosen {
+		bootargs = "console=ttyUL0,230400 earlycon=sbi root=/dev/nfs nfsroot=192.168.1.167:/srv/hg-rootfs,v3,tcp ip=dhcp rw";
+	};
+};

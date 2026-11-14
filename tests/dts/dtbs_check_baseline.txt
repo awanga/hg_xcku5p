@@ -1,0 +1,12 @@
+/: failed to match any schema with compatible: ['hamgeek,hg-xcku5p', 'vexiiriscv']
+/cpus/cpu@0: failed to match any schema with compatible: ['spinalhdl,vexiiriscv', 'riscv']
+cpu@0 (spinalhdl,vexiiriscv): compatible: 'oneOf' conditional failed, one must be fixed:
+ethernet@f8009000 (litex,liteeth): 'interrupt-names' does not match any of the regexes: '^pinctrl-[0-9]+$'
+ethernet@f8009000 (litex,liteeth): interrupts: [[3], [8]] is too long
+ethernet@f8009000 (litex,liteeth): reg-names: ['mac', 'mdio', 'buffer', 'dma'] is too long
+ethernet@f8009000 (litex,liteeth): reg: [[4160786432, 256], [4160784384, 256], [4160798720, 8192], [4160806912, 256]] is too long
+gpio@f8003000 (xlnx,xps-gpio-1.00.a): 'clocks' is a required property
+i2c@f8006000 (xlnx,xps-iic-2.00.a): Unevaluated properties are not allowed ('clock-names' was unexpected)
+i2c@f8007000 (xlnx,xps-iic-2.00.a): Unevaluated properties are not allowed ('clock-names' was unexpected)
+serial@f8000000 (xlnx,xps-uartlite-1.00.a): Unevaluated properties are not allowed ('clock-frequency', 'xlnx,baudrate' were unexpected)
+serial@f8000000 (xlnx,xps-uartlite-1.00.a): xlnx,baudrate: b'\x00\x03\x84\x00' is not of type 'object', 'integer', 'array', 'boolean', 'null'
