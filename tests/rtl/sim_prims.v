@@ -5,8 +5,18 @@ module BUFG (input I, output O);
 endmodule
 
 module ODDRE1 (input C, input D1, input D2, input SR, output Q);
-    // SAME_EDGE with D2 = 0 and D1 = 1: Q follows C (forwarded clock). Only that use exists in the core.
-    assign Q = C ? D1 : D2;
+    // SAME_EDGE: both inputs are sampled at the rising edge; D1 is driven during the high phase, D2 during the low phase.
+    reg d1q = 1'b0, d2q = 1'b0;
+    always @(posedge C) begin
+        d1q <= D1;
+        d2q <= D2;
+    end
+    assign Q = C ? d1q : d2q;
+endmodule
+
+module OBUFDS (input I, output O, output OB);
+    assign O = I;
+    assign OB = ~I;
 endmodule
 
 module FDPE #(parameter INIT = 1'b1) (input C, input CE, input D, input PRE, output reg Q);

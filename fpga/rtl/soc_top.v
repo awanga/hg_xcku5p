@@ -55,6 +55,13 @@ module soc_top #(
     inout  wire        i2c0_sda,
     inout  wire        i2c1_scl,
     inout  wire        i2c1_sda,
+    // HDMI output (TMDS pairs in bank 65 at 1.2 V, AC coupled on the board; no DDC): clock, data 0 (blue), 1 (green), 2 (red); connector 5 V enable; hot-plug detect
+    output wire        hdmi_clk_p,
+    output wire        hdmi_clk_n,
+    output wire [2:0]  hdmi_d_p,
+    output wire [2:0]  hdmi_d_n,
+    output wire        hdmi_oe,
+    input  wire        hdmi_hpd,
     // RTL8211EG in GMII mode (bank 87, 3.3 V). MDC/MDIO/INT/COL/CRS have no FPGA pin.
     input  wire        eth_rx_clk,
     output wire        eth_gtx_clk,
@@ -87,6 +94,24 @@ module soc_top #(
         .DADDR(7'd0), .DCLK(1'b0), .DEN(1'b0), .DI(16'd0), .DWE(1'b0),
         .PSCLK(1'b0), .PSEN(1'b0), .PSINCDEC(1'b0));
     BUFG u_bufg_per (.I(per_clk_raw), .O(per_clk));
+
+    // Video clocks (HDMI 1024x768@60): 50 MHz x 26 = 1300 MHz VCO; /20 = 65 MHz pixel clock, /4 = 325 MHz (5x, two bits per cycle on the TMDS lanes)
+    wire vmmcm_fb, vmmcm_locked, pclk_raw, clk5_raw, pclk, clk5;
+    MMCME4_ADV #(
+        .CLKIN1_PERIOD(20.0),
+        .DIVCLK_DIVIDE(1),
+        .CLKFBOUT_MULT_F(26.0),
+        .CLKOUT0_DIVIDE_F(20.0),
+        .CLKOUT1_DIVIDE(4)
+    ) u_vmmcm (
+        .CLKIN1(clk50_ibuf), .CLKIN2(1'b0), .CLKINSEL(1'b1),
+        .CLKFBIN(vmmcm_fb), .CLKFBOUT(vmmcm_fb),
+        .CLKOUT0(pclk_raw), .CLKOUT1(clk5_raw),
+        .LOCKED(vmmcm_locked), .RST(1'b0), .PWRDWN(1'b0),
+        .DADDR(7'd0), .DCLK(1'b0), .DEN(1'b0), .DI(16'd0), .DWE(1'b0),
+        .PSCLK(1'b0), .PSEN(1'b0), .PSINCDEC(1'b0));
+    BUFG u_bufg_pclk (.I(pclk_raw), .O(pclk));
+    BUFG u_bufg_clk5 (.I(clk5_raw), .O(clk5));
 
     reg [2:0] cpu_rst_q = 3'b000;
     reg [2:0] per_rst_q = 3'b000;
@@ -137,6 +162,11 @@ module soc_top #(
     wire [2:0]  dma_awsize;
     wire [1:0]  dma_awburst;
     wire [63:0] dma_wdata, dma_rdata;
+    wire        dma_arvalid, dma_rready;
+    wire [31:0] dma_araddr;
+    wire [7:0]  dma_arlen;
+    wire [2:0]  dma_arsize;
+    wire [1:0]  dma_arburst;
     wire [3:0]  dma_bid, dma_rid;
     wire [1:0]  dma_bresp, dma_rresp;
 `endif
@@ -164,10 +194,10 @@ module soc_top #(
         .dma_bus_awlen(dma_awlen), .dma_bus_awsize(dma_awsize), .dma_bus_awburst(dma_awburst),
         .dma_bus_wvalid(dma_wvalid), .dma_bus_wready(dma_wready), .dma_bus_wdata(dma_wdata), .dma_bus_wstrb(dma_wstrb), .dma_bus_wlast(dma_wlast),
         .dma_bus_bvalid(dma_bvalid), .dma_bus_bready(dma_bready), .dma_bus_bid(dma_bid), .dma_bus_bresp(dma_bresp),
-        .dma_bus_arvalid(1'b0), .dma_bus_arready(dma_arready), .dma_bus_araddr(32'd0), .dma_bus_arid(4'd0),
+        .dma_bus_arvalid(dma_arvalid), .dma_bus_arready(dma_arready), .dma_bus_araddr(dma_araddr), .dma_bus_arid(4'd0),
         .dma_bus_arregion(4'd0), .dma_bus_arlock(1'b0), .dma_bus_arcache(4'd0), .dma_bus_arqos(4'd0), .dma_bus_arprot(3'd0),
-        .dma_bus_arlen(8'd0), .dma_bus_arsize(3'd0), .dma_bus_arburst(2'd1),
-        .dma_bus_rvalid(dma_rvalid), .dma_bus_rready(1'b1), .dma_bus_rdata(dma_rdata), .dma_bus_rid(dma_rid),
+        .dma_bus_arlen(dma_arlen), .dma_bus_arsize(dma_arsize), .dma_bus_arburst(dma_arburst),
+        .dma_bus_rvalid(dma_rvalid), .dma_bus_rready(dma_rready), .dma_bus_rdata(dma_rdata), .dma_bus_rid(dma_rid),
         .dma_bus_rresp(dma_rresp), .dma_bus_rlast(dma_rlast),
 `endif
         .debug());
@@ -278,13 +308,13 @@ ddr4_0 u_ddr4 (
 
     // crossbar masters: 0 UART lite, 1 board regs, 2 boot ROM, 3 SPI (SD card), 4 LiteEth (CSR/MDIO 0xF8008000 16 KiB and packet buffers 0xF800C000 8 KiB, remapped below),
     // 5 AXI GPIO 0xF8003000, 6 AXI Timer (PWM) 0xF8004000, 7 SPI (MS5611) 0xF8005000,
-    // 8 AXI IIC (PL_I2C) 0xF8006000, 9 AXI IIC (second bus) 0xF8007000
-    wire [351:0] x_awaddr, x_araddr, x_wdata, x_rdata;
-    wire [32:0] x_awprot, x_arprot;
-    wire [43:0] x_wstrb;
-    wire [21:0] x_bresp, x_rresp;
-    wire [10:0] x_awvalid, x_awready, x_wvalid, x_wready, x_bvalid, x_bready;
-    wire [10:0] x_arvalid, x_arready, x_rvalid, x_rready;
+    // 8 AXI IIC (PL_I2C) 0xF8006000, 9 AXI IIC (second bus) 0xF8007000, 10 eth_dma 0xF800E000, 11 HDMI scan-out 0xF800F000
+    wire [383:0] x_awaddr, x_araddr, x_wdata, x_rdata;
+    wire [35:0] x_awprot, x_arprot;
+    wire [47:0] x_wstrb;
+    wire [23:0] x_bresp, x_rresp;
+    wire [11:0] x_awvalid, x_awready, x_wvalid, x_wready, x_bvalid, x_bready;
+    wire [11:0] x_arvalid, x_arready, x_rvalid, x_rready;
 
     // second crossbar master: the DMA engine's source reads (write channels tied off)
     wire [31:0] dm_araddr, dm_rdata;
@@ -540,5 +570,44 @@ ddr4_0 u_ddr4 (
     assign e_wready = 1'b0;
     assign e_bvalid = 1'b0;
     assign e_bresp = 2'b00;
+`endif
+
+    // ---------------------------------------------------------------- HDMI output (crossbar slave 11 at 0xF800F000; frame buffer reads through the hub DMA port)
+    wire [31:0] h_araddr;
+    wire [7:0]  h_arlen;
+    wire        h_arvalid, h_arready, h_rvalid, h_rready;
+    wire [63:0] h_rdata;
+    wire [1:0]  h_rresp;
+    wire [3:0]  hdmi_ser;
+    hdmi_out u_hdmi (
+        .clk(per_clk), .rst_n(per_rst_n), .pclk(pclk), .clk5(clk5),
+        .s_awaddr(x_awaddr[356:352]), .s_awvalid(x_awvalid[11]), .s_awready(x_awready[11]),
+        .s_wdata(x_wdata[383:352]), .s_wstrb(x_wstrb[47:44]), .s_wvalid(x_wvalid[11]), .s_wready(x_wready[11]),
+        .s_bresp(x_bresp[23:22]), .s_bvalid(x_bvalid[11]), .s_bready(x_bready[11]),
+        .s_araddr(x_araddr[356:352]), .s_arvalid(x_arvalid[11]), .s_arready(x_arready[11]),
+        .s_rdata(x_rdata[383:352]), .s_rresp(x_rresp[23:22]), .s_rvalid(x_rvalid[11]), .s_rready(x_rready[11]),
+        .m_araddr(h_araddr), .m_arlen(h_arlen), .m_arvalid(h_arvalid), .m_arready(h_arready), .m_rdata(h_rdata), .m_rresp(h_rresp),
+        .m_rvalid(h_rvalid), .m_rready(h_rready), .hpd(hdmi_hpd), .oe(hdmi_oe), .ser(hdmi_ser));
+    OBUFDS u_hdmi_obuf_c (.I(hdmi_ser[3]), .O(hdmi_clk_p), .OB(hdmi_clk_n));
+    OBUFDS u_hdmi_obuf_r (.I(hdmi_ser[2]), .O(hdmi_d_p[2]), .OB(hdmi_d_n[2]));
+    OBUFDS u_hdmi_obuf_g (.I(hdmi_ser[1]), .O(hdmi_d_p[1]), .OB(hdmi_d_n[1]));
+    OBUFDS u_hdmi_obuf_b (.I(hdmi_ser[0]), .O(hdmi_d_p[0]), .OB(hdmi_d_n[0]));
+`ifdef WITH_DMA
+    cc_dmar u_cc_dmar (
+        .s_axi_aclk(per_clk), .s_axi_aresetn(per_rst_n),
+        .s_axi_arid(4'd0), .s_axi_araddr(h_araddr), .s_axi_arlen(h_arlen), .s_axi_arsize(3'd3), .s_axi_arburst(2'd1),
+        .s_axi_arlock(1'b0), .s_axi_arcache(4'd0), .s_axi_arprot(3'd0), .s_axi_arregion(4'd0), .s_axi_arqos(4'd0),
+        .s_axi_arvalid(h_arvalid), .s_axi_arready(h_arready),
+        .s_axi_rid(), .s_axi_rdata(h_rdata), .s_axi_rresp(h_rresp), .s_axi_rlast(), .s_axi_rvalid(h_rvalid), .s_axi_rready(h_rready),
+        .m_axi_aclk(cpu_clk), .m_axi_aresetn(cpu_rst_n),
+        .m_axi_arid(), .m_axi_araddr(dma_araddr), .m_axi_arlen(dma_arlen), .m_axi_arsize(dma_arsize), .m_axi_arburst(dma_arburst),
+        .m_axi_arlock(), .m_axi_arcache(), .m_axi_arprot(), .m_axi_arregion(), .m_axi_arqos(),
+        .m_axi_arvalid(dma_arvalid), .m_axi_arready(dma_arready),
+        .m_axi_rid(dma_rid), .m_axi_rdata(dma_rdata), .m_axi_rresp(dma_rresp), .m_axi_rlast(dma_rlast), .m_axi_rvalid(dma_rvalid), .m_axi_rready(dma_rready));
+`else
+    assign h_arready = 1'b0;
+    assign h_rvalid = 1'b0;
+    assign h_rdata = 64'd0;
+    assign h_rresp = 2'b00;
 `endif
 endmodule

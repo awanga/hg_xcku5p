@@ -5,13 +5,14 @@
 # DTS_NAME selects the device tree (default hg-xcku5p-sdroot; hg-xcku5p-sdroot-netcon adds netconsole).
 # KDEBUG=1 adds dynamic debug to the kernel for driver bring-up; DATA_MIB sets the data partition size (default 256).
 # KNFS=1 adds NFS root support (use with DTS_NAME=hg-xcku5p-sdnfs and scripts/nfs_dev_setup.sh).
+# KHDMI=1 adds the frame buffer console (use with DTS_NAME=hg-xcku5p-sdroot-hdmi and a bitstream with the HDMI scan-out).
 # KPROFILE=1 enables kernel profiling (use with DTS_NAME=hg-xcku5p-sdroot-prof, then readprofile with the kernel System.map).
 set -eu
 here=$(cd "$(dirname "$0")/.." && pwd)
 b=$here/build/linux
 src=$here/build/third_party/linux
 cross=$b/br/host/bin/riscv64-buildroot-linux-musl-
-KDEBUG=${KDEBUG:-0} KNFS=${KNFS:-0} KPROFILE=${KPROFILE:-0} "$here/linux/kernel/configure.sh" "$src" "$b/kernel_sd" "$cross" ""
+KDEBUG=${KDEBUG:-0} KNFS=${KNFS:-0} KHDMI=${KHDMI:-0} KPROFILE=${KPROFILE:-0} "$here/linux/kernel/configure.sh" "$src" "$b/kernel_sd" "$cross" ""
 make -C "$src" ARCH=riscv CROSS_COMPILE="$cross" O="$b/kernel_sd" -j8 Image >"$b/kernel_sd.log" 2>&1
 cpp -nostdinc -undef -x assembler-with-cpp -I"$here/linux/dts" "$here/linux/dts/${DTS_NAME:-hg-xcku5p-sdroot}.dts" |
 	dtc -I dts -O dtb -o "$b/hg-xcku5p-sdroot.dtb" -
@@ -29,3 +30,5 @@ truncate -s "${DATA_MIB:-256}M" "$b/data.ext4"
 mke2fs -q -t ext4 -L data -E root_owner=0:0 "$b/data.ext4"
 python3 "$here/tools/mkcard.py" "$b/sdcard.img" --fw "$b/opensbi_sd/platform/generic/firmware/fw_jump.bin" \
 	--kernel "$b/kernel_sd/arch/riscv/boot/Image" --dtb "$b/hg-xcku5p-sdroot.dtb" --rootfs "$b/rootfs_ro.ext4" --data "$b/data.ext4"
+# The boot area (everything before the root partition at 16 MiB) alone updates the kernel, device tree and firmware without touching the root or data partitions.
+head -c 16M "$b/sdcard.img" >"$b/boot_area.img"

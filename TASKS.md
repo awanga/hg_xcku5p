@@ -218,7 +218,7 @@
 
 ## Deferred workstreams (not MVP blockers)
 
-- [ ] HDMI input/output support after the board's actual signal path and PHY/IP requirements are confirmed.
+- [x] HDMI output (input excluded by owner): 1024x768@60 DVI-style TMDS, fb console on a monitor. (2026-11-15: docs/validation/hdmi-output.md; HPD unresolved, one monitor tested, no EDID. HDMI input not built: owner decision)
 - [ ] FMC HPC interface experiments and documented constraints.
 - [ ] PCIe endpoint or host functionality, if the carrier wiring and use case justify it.
 - [ ] 100G optical port: GTY transceiver bring-up, reference clocks, MAC/PCS/FEC, licensing, link partner, and performance validation. Keep isolated from MVP until explicitly reprioritized.

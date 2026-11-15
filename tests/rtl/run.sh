@@ -291,5 +291,59 @@ mut_dma edm_bresp "s/if (m_bresp != 2.b00) begin/if (1'b0) begin/"
 mut_dma edm_awinc "s/m_awaddr + 32.d8/m_awaddr + 32'd4/"
 mut_dma edm_ien "s/assign irq = done \& ien;/assign irq = done;/"
 mut_dma edm_busy "s/if (reg_we \&\& !busy \&\& reg_wstrb\[0\])/if (reg_we \&\& reg_wstrb[0])/"
+# tmds_encoder
+tme=$here/fpga/rtl/tmds_encoder.v
+tbi=$here/tests/rtl/tb_tmds_encoder.v
+verilator --lint-only -Wall -Wno-DECLFILENAME "$tme" >"$b/lint_tme.log" 2>&1 && echo "PASS lint tmds_encoder" || {
+	echo "FAIL lint tmds_encoder"; head "$b/lint_tme.log"; fail=1; }
+run_ip tmds_encoder "$tme" PASS
+mut_tme() { # name sed-expression
+	sed "$2" "$tme" >"$b/mut_$1.v"
+	cmp -s "$tme" "$b/mut_$1.v" && { echo "FAIL mutant $1 unchanged"; fail=1; }
+	run_ip "mut_$1" "$b/mut_$1.v" FAIL
+}
+mut_tme tme_noinv "s/(cnt > 6'sd0 \&\& diff > 6'sd0) || (cnt < 6'sd0 \&\& diff < 6'sd0)/1'b0/"
+mut_tme tme_ctl "s/2'b01: q <= 10'b0010101011;/2'b01: q <= 10'b0010101010;/"
+mut_tme tme_xnor "s/ || (n1d == 4'd4 \&\& d\[0\] == 1'b0)//"
+# HDMI scan-out chain (timing, fetch, line buffer, encoders, serializers) in a shrunk mode, with an independent TMDS receiver model
+hd=$here/fpga/rtl
+hdmi_files="hdmi_out hdmi_timing hdmi_fetch hdmi_linebuf tmds_encoder tmds_ser axil_simple"
+run_hdmi() { # name expect [mutated-file-basename mutated-path] [-P options...]
+	local n=$1 want=$2 mb=${3:-} mp=${4:-} f list=""
+	shift 4 2>/dev/null || shift $#
+	for f in $hdmi_files; do
+		if [ "$f" = "$mb" ]; then list="$list $mp"; else list="$list $hd/$f.v"; fi
+	done
+	iverilog -g2005 -o "$b/$n.vvp" "$@" "$here/tests/rtl/tb_hdmi_out.v" $list "$here/tests/rtl/sim_prims.v" >"$b/$n.build.log" 2>&1 || { echo "FAIL $n (build)"; fail=1; return; }
+	timeout 250 vvp "$b/$n.vvp" >"$b/$n.log" 2>&1
+	grep -q "TBRESULT.* $want\$" "$b/$n.log" && echo "PASS $n [icarus, expect $want]" || { echo "FAIL $n [expected $want]"; grep -E 'TBRESULT|FAIL' "$b/$n.log" | head -3; fail=1; }
+}
+for f in hdmi_out hdmi_timing hdmi_fetch hdmi_linebuf tmds_ser; do
+	extra=()
+	[ "$f" = hdmi_out ] && extra=("$hd/hdmi_timing.v" "$hd/hdmi_fetch.v" "$hd/hdmi_linebuf.v" "$hd/tmds_encoder.v" "$hd/tmds_ser.v" "$hd/axil_simple.v")
+	verilator --lint-only -Wall -Wno-DECLFILENAME "$here/tests/rtl/sim_prims.v" "$hd/$f.v" "${extra[@]}" -Wno-PINMISSING -Wno-UNUSEDSIGNAL -Wno-UNUSEDPARAM \
+		-Wno-WIDTHEXPAND -Wno-WIDTHTRUNC >"$b/lint_$f.log" 2>&1 --top-module "$f" && echo "PASS lint $f" || { echo "FAIL lint $f"; head -5 "$b/lint_$f.log"; fail=1; }
+done
+run_hdmi hdmi_out PASS
+hdmi_srcs=()
+for f in $hdmi_files; do hdmi_srcs+=("$hd/$f.v"); done
+verilator --binary --timing -Wno-fatal -Wno-DECLFILENAME --top-module tb_hdmi_out --Mdir "$b/vl_hd" "$here/tests/rtl/tb_hdmi_out.v" \
+	"${hdmi_srcs[@]}" "$here/tests/rtl/sim_prims.v" >"$b/vl_hd.build.log" 2>&1 || { echo "FAIL hdmi_out (verilator build)"; fail=1; }
+timeout 250 "$b/vl_hd/Vtb_hdmi_out" >"$b/vl_hd.log" 2>&1
+grep -q "TBRESULT.* PASS\$" "$b/vl_hd.log" && echo "PASS hdmi_out [verilator]" || { echo "FAIL hdmi_out [verilator]"; fail=1; }
+run_hdmi hdmi_slow PASS "" "" -P tb_hdmi_out.LAT=30 -P tb_hdmi_out.GAP=2
+run_hdmi hdmi_late PASS "" "" -P tb_hdmi_out.LAT=200 -P tb_hdmi_out.EXPECT_LATE=1
+mut_hdmi() { # name file sed-expression
+	sed "$3" "$hd/$2.v" >"$b/mut_$1.v"
+	cmp -s "$hd/$2.v" "$b/mut_$1.v" && { echo "FAIL mutant $1 unchanged"; fail=1; }
+	run_hdmi "mut_$1" FAIL "$2" "$b/mut_$1.v"
+}
+mut_hdmi hd_lane hdmi_out "s/2'd1: pix <= lb_rdata\[31:16\];/2'd1: pix <= lb_rdata[47:32];/"
+mut_hdmi hd_blue hdmi_out "s/b8 <= {pix\[4:0\], pix\[4:2\]};/b8 <= {pix[4:0], 3'b000};/"
+mut_hdmi hd_hspol hdmi_timing "s/parameter HS_NEG = 1,/parameter HS_NEG = 0,/"
+mut_hdmi hd_addr hdmi_fetch "s/base_q + line_no \* LINE_BYTES/base_q + line_no * (LINE_BYTES \/ 2)/"
+mut_hdmi hd_bank hdmi_fetch "s/bank <= line_no\[0\];/bank <= ~line_no[0];/"
+mut_hdmi hd_base hdmi_fetch "s/if (line_no == 10'd0) begin/if (1'b1) begin/"
+mut_hdmi hd_ser tmds_ser "s/.D1(sh\[0\]), .D2(sh\[1\])/.D1(sh[1]), .D2(sh[0])/"
 [ "$fail" = 0 ] && echo "ALL PASS" || echo "FAILURES"
 exit "$fail"

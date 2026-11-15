@@ -1,9 +1,11 @@
 # SPDX-License-Identifier: MIT
 # Close a small setup miss on a routed SoC checkpoint (a few ps to ~0.05 ns): post-route phys_opt, then an Explore re-route, then phys_opt again.
-# usage: vivado -mode batch -source fpga/scripts/postroute_fix.tcl -tclargs <in_routed.dcp> <out_prefix>   writes <out_prefix>.dcp, _timing.rpt and, if WNS >= 0, .bit
+# usage: vivado -mode batch -source fpga/scripts/postroute_fix.tcl -tclargs <in_routed.dcp> <out_prefix> [extra.xdc]   writes <out_prefix>.dcp, _timing.rpt and, if WNS >= 0, .bit
 set in [lindex $argv 0]
 set out [lindex $argv 1]
 open_checkpoint $in
+# optional third argument: an extra XDC applied to the opened checkpoint (constraint changes that do not need a new placement)
+if {$argc > 2} { read_xdc [lindex $argv 2] }
 proc wns {t} { return [get_property SLACK [get_timing_paths -delay_type $t -max_paths 1]] }
 phys_opt_design -directive AggressiveExplore
 puts "STEP phys_opt wns=[wns max] whs=[wns min]"

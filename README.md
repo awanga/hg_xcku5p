@@ -31,7 +31,7 @@ The sales description lists the following. The authoritative source for pinout, 
 |---|---|
 | AMD/Xilinx XCKU5P-FFVB676-2-i | Vivado device/part and timing target; confirm exact ordering-code interpretation in the project constraints |
 | 2 × MT40A256M16GE-075E DDR4 (owner-stated; 32-bit total bus) | Two x16 4 Gb devices side by side give a 32-bit bus and 1 GiB. Confirm byte-lane/bank mapping, reference clock, calibration, and achievable data rate from schematic/controller validation |
-| HDMI | Defer until Linux baseline; identify whether input, output, or both are actually routed and what PHY/bridge logic exists |
+| HDMI | Output only (the board has one HDMI output, DDC not wired to the FPGA): 1024x768@60 DVI-style TMDS from the FPGA fabric, Linux frame buffer console (`docs/validation/hdmi-output.md`). No HDMI input |
 | Gigabit Ethernet | MVP networking if PHY/interface and clock/reset details are confirmed |
 | FMC HPC | Document pin assignments and electrical constraints; future custom-I/O workstream |
 | SD card | Normal kernel/rootfs storage, subject to controller and boot path |
@@ -76,7 +76,7 @@ A generated SoC is acceptable if it can emit deterministic RTL/constraints and a
 6. **Validation layer:** simulation, lint/config checks, synthesis reports, timing reports, hardware smoke/performance tests.
 7. **Release layer:** checksummed and versioned bitstream, boot firmware, kernel, DTB, rootfs, build metadata, and recovery instructions.
 
-### Current implementation (2026-11-12)
+### Current implementation (2026-11-15)
 
 Board-tested; details and evidence in `TASKS.md` and `docs/validation/`.
 - **CPU:** VexiiRiscv RV64IMA (Linux 6.x, OpenSBI, Buildroot) with the coherency hub and a 128 KiB 4-way L2 (UltraRAM), CPU and DDR4 controller on one 333.33 MHz clock (DDR4-2667), timing met.
@@ -86,9 +86,9 @@ Board-tested; details and evidence in `TASKS.md` and `docs/validation/`.
   user LEDs, keys K1-K4 and DIP switches SW1-SW4 (Linux gpio-leds / gpio-keys-polled), two AXI IIC buses (bus 1: two BL24C256 EEPROMs at 0x50/0x51; bus 0 / U4 not detected, owner to check).
   The UART interrupt is held until the CPU reads the UART (`fpga/rtl/irq_hold.v`); the PLIC drops a one-cycle pulse that arrives during an in-flight interrupt.
 - **Boot:** the FPGA configures from the QSPI flash (SPIx4, 51 MHz), the boot ROM loads OpenSBI, kernel and root filesystem from the SD card. The flash on this board probes as a 128 Mb part (JEDEC 0x20BB18),
-  not the 256 Mb part named above; a tested script restores the vendor image (`factory/`). Ethernet receive copy engine on the coherent hub (RX 46 Mb/s, `docs/validation/eth-dma.md`). Not yet implemented: PCIe, FMC, QSFP, HDMI.
+  not the 256 Mb part named above; a tested script restores the vendor image (`factory/`). Ethernet receive copy engine on the coherent hub (RX 46 Mb/s, `docs/validation/eth-dma.md`). HDMI output: RGB565 frame buffer in DDR4 scanned out at 1024x768@60 over TMDS (`fpga/rtl/hdmi_out.v`), Linux simple-framebuffer console, tested on one monitor (`docs/validation/hdmi-output.md`; HPD not understood, no EDID, no audio). Not yet implemented: PCIe, FMC, QSFP.
 - **Tooling:** `scripts/ci.sh` (shellcheck, clang-format, ruff, device-tree address/IRQ map, rootfs and RTL tests; also run by GitHub Actions), `scripts/fetch_sources.sh` (pinned external sources),
-  `tools/build_report.py` (timing/DRC report.json), `tools/smoke.py` (18 hardware checks over the console), `scripts/release.sh` (dry run only; versioning scheme not yet approved).
+  `tools/build_report.py` (timing/DRC report.json), `tools/smoke.py` (hardware checks over the console), `scripts/release.sh` (release packages; semver, `VERSION`, v0.1.0 tagged on `main`).
 - **Simulation:** `tests/rtl/run.sh` (unit tests with mutants) and `tests/soc/run.sh` (Verilator, default SoC netlist `soc_l2u_128k_w4` from `fpga/scripts/cpu/gen_default_soc.sh`).
 
 ### Memory and boot strategy

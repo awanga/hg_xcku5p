@@ -1,0 +1,34 @@
+// SPDX-License-Identifier: MIT
+/*
+ * HDMI output (fpga/rtl/hdmi_out.v): 1024x768@60, RGB565, 2048 bytes per line. The scan-out reads this 1.5 MiB frame buffer from DDR4 through the
+ * coherent hub DMA port, so the CPU needs no cache maintenance. The last 2 MiB of the 1 GiB DDR4 window are reserved for it; /etc/init.d/S03hdmi programs
+ * the scan-out registers (0xF800F000: FB_BASE = 0x7FE00000, CTRL = ENABLE | OE). The board has no DDC wiring, so the mode is fixed.
+ */
+/ {
+	reserved-memory {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+
+		hdmi_fb: framebuffer@7fe00000 {
+			reg = <0x7fe00000 0x200000>;
+			no-map;
+		};
+	};
+
+	framebuffer0: framebuffer@7fe00000 {
+		compatible = "simple-framebuffer";
+		reg = <0x7fe00000 0x180000>;
+		width = <1024>;
+		height = <768>;
+		stride = <2048>;
+		format = "r5g6b5";
+	};
+
+	soc {
+		hdmi0: hdmi@f800f000 {
+			compatible = "hamgeek,hg-hdmi-out";
+			reg = <0xf800f000 0x1000>;
+		};
+	};
+};
