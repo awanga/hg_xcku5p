@@ -376,6 +376,42 @@ mut_prg prg_hostwin "s/if (c_we \&\& c_addr\[6:2\] == 5'd29) wsize <= c_wd;/if (
 mut_prg prg_hostrdwin "s/5'd29: rd = cpu ? wsize : 32'd0;/5'd29: rd = wsize;/"
 mut_prg prg_winrst "s/            wsize <= 32'd0;\n//; s/wsize <= 32'd0;/wsize <= wsize;/"
 mut_prg prg_sticky "s/else if (c_we \&\& c_addr\[6:2\] == 5'd1 \&\& c_wd\[5\]) ever_up <= 1'b0;/else ever_up <= 1'b0;/"
+# vpcie (logical PCIe device of the CPU-as-root-complex variant)
+vpd=$here/fpga/rtl/vpcie.v
+tbv=$here/tests/rtl/tb_vpcie.v
+vp_srcs=("$here/fpga/rtl/pcie_regs.v" "$here/fpga/rtl/axil_simple.v")
+verilator --lint-only -Wall -Wno-DECLFILENAME "$vpd" >"$b/lint_vpd.log" 2>&1 && echo "PASS lint vpcie" || {
+	echo "FAIL lint vpcie"; head "$b/lint_vpd.log"; fail=1; }
+run_vpd() { # name dut expect [iverilog args]
+	local n=$1 d=$2 e=$3
+	shift 3
+	iverilog -g2005 "$@" -o "$b/$n.vvp" "$tbv" "$d" "${vp_srcs[@]}" >"$b/$n.build.log" 2>&1 || { echo "FAIL $n (build)"; fail=1; return; }
+	timeout 250 vvp "$b/$n.vvp" >"$b/$n.log" 2>&1
+	grep -q "TBRESULT.* $e\$" "$b/$n.log" && echo "PASS $n [icarus, expect $e]" || { echo "FAIL $n [expected $e]"; grep -E 'TBRESULT|FAIL' "$b/$n.log" | head -3; fail=1; }
+}
+run_vpd vpcie "$vpd" PASS
+run_vpd vpcie_slow "$vpd" PASS -P tb_vpcie.RDLY=3
+verilator --binary --timing -Wno-fatal -Wno-DECLFILENAME --top-module tb_vpcie --Mdir "$b/vl_vpd" "$tbv" "$vpd" "${vp_srcs[@]}" >"$b/vl_vpd.build.log" 2>&1 || {
+	echo "FAIL vpcie (verilator build)"; fail=1; }
+timeout 250 "$b/vl_vpd/Vtb_vpcie" >"$b/vl_vpd.log" 2>&1
+grep -q "TBRESULT.* PASS\$" "$b/vl_vpd.log" && echo "PASS vpcie [verilator]" || { echo "FAIL vpcie [verilator]"; fail=1; }
+mut_vpd() { # name sed-expression
+	sed "$2" "$vpd" >"$b/mut_$1.v"
+	cmp -s "$vpd" "$b/mut_$1.v" && { echo "FAIL mutant $1 unchanged"; fail=1; }
+	run_vpd "mut_$1" "$b/mut_$1.v" FAIL
+}
+mut_vpd vp_rmem "s/wire r_hit    = ra\[20\] \&\& cmd_mem \&\&/wire r_hit    = ra[20] \&\&/"
+mut_vpd vp_wmem "s/wire w_hit    = wa\[20\] \&\& cmd_mem \&\&/wire w_hit    = wa[20] \&\&/"
+mut_vpd vp_base "s/bar0 == {BASE\[31:21\], ra\[20:16\]}/bar0[4:0] == ra[20:16]/"
+mut_vpd vp_abort "s/r_cfg_f0 ? cfg_q : 32'hFFFFFFFF/r_cfg_f0 ? cfg_q : 32'd0/"
+mut_vpd vp_cmdstrb "s/if (wb\[1\]) cmd_intxd <= wd\[10\];/if (wb[0]) cmd_intxd <= wd[10];/"
+mut_vpd vp_intxd "s/assign intx = intx_pending \& ~cmd_intxd;/assign intx = intx_pending;/"
+mut_vpd vp_status "s/{12'd0, intx_pending, 3'd0,/{12'd0, intx, 3'd0,/"
+mut_vpd vp_off "s/assign m_awaddr  = wa\[6:0\];/assign m_awaddr  = {1'b0, wa[5:0]};/"
+mut_vpd vp_rst "s/            bar0 <= 16'd0;//"
+mut_vpd vp_dev "s/(ra\[19:12\] == 8'd0)/(ra[19:15] == 5'd0)/"
+mut_vpd vp_wdev "s/(wa\[19:12\] == 8'd0)/(wa[19:15] == 5'd0)/"
+mut_vpd vp_bar "s/if (wb\[2\]) bar0\[7:0\] <= wd\[23:16\];/if (wb[2]) bar0[7:0] <= wd[23:16] \& 8'hFE;/"
 # axi_win (AXI4 window filter of the PCIe DMA master)
 aw=$here/fpga/rtl/axi_win.v
 tbw=$here/tests/rtl/tb_axi_win.v
