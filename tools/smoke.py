@@ -117,8 +117,8 @@ NET_CHECKS = [
 ]
 
 # PCIe endpoint registers (build_soc.tcl -pcie; CPU window at 0xF800A000, fpga/rtl/pcie_regs.v). No slot is plugged in on the bench, so the link is down
-# so the link stays down. The PCIe user clock (STATUS bit 1) was seen running without a slot (2026-11-15), probably from an on-board 100 MHz oscillator on
-# the reference clock net: informational only. The checks prove the registers answer and keep their contract.
+# so the link stays down. The PCIe user clock (STATUS bit 1) was seen running without a slot (2026-11-15), cause not established (X2 feeds bank 225, not
+# the PCIe pair): informational only. The checks prove the registers answer and keep their contract.
 PCIE_CHECKS = [
     (
         "pcie_id",
