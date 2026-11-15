@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MIT
 """Hardware smoke test: log in on the board console, run checks, archive the log, print PASS/FAIL per check.
 
-usage: smoke.py [--port /dev/ttyUSB2] [--baud 230400] [--log DIR] [--net HOST] [--sd] [--pcie] [--reset flash|FILE.bit] [--wait SECONDS]
+usage: smoke.py [--port /dev/ttyUSB2] [--baud 230400] [--log DIR] [--net HOST] [--sd] [--pcie] [--vpcie] [--reset flash|FILE.bit] [--wait SECONDS]
 
 The board must already be running Linux (power cycle, flash boot or SD boot). The log (build/smoke/<time>.log by
 default) records the kernel, CPU clock, board register values and every command with its output, which identifies
@@ -153,6 +153,45 @@ PCIE_CHECKS = [
     ),
 ]
 
+# Logical PCIe root complex (build_soc.tcl -vpcie, KVPCIE=1 kernel, DTS hg-xcku5p-sdroot-vpcie; decision 0008): the CPU's own PCIe device 00:00.0 behind the
+# generic ECAM host bridge, served by the same pcie_regs block the endpoint uses (CPU window 0xF800A000). The BAR0 address is read from sysfs.
+VPCIE_CHECKS = [
+    (
+        "vpcie_enumerates",
+        "lspci -n",
+        r"^00:00\.0 .*: 10ee:9034",
+        "host bridge enumerated 00:00.0 with the XDMA IDs 10ee:9034",
+    ),
+    (
+        "vpcie_bar0",
+        "cat /sys/bus/pci/devices/0000:00:00.0/resource | head -1",
+        r"^0x00000000f91[0-9a-f]0000 0x00000000f91[0-9a-f]ffff 0x0000000000040200",
+        "BAR0 64 KiB memory assigned inside the 1 MiB BAR window",
+    ),
+    (
+        "vpcie_bar_id",
+        "b=$(cut -d' ' -f1 /sys/bus/pci/devices/0000:00:00.0/resource | head -1); devmem $b 32",
+        r"0x50434901",
+        "BAR0 +0 reads the register block ID through the bridge",
+    ),
+    (
+        "vpcie_mailbox",
+        "b=$(cut -d' ' -f1 /sys/bus/pci/devices/0000:00:00.0/resource | head -1); devmem $b+0x20 32 0xC0FFEE11; "
+        "devmem 0xF800A020 32; devmem 0xF800A024 32 0x1BADB002; devmem $b+0x24 32",
+        r"0xC0FFEE11\s+0x1BADB002",
+        "host-side BAR0 and CPU-side register windows see the same mailbox",
+    ),
+    (
+        "vpcie_intx",
+        "echo 10ee 9034 >/sys/bus/pci/drivers/uio_pci_generic/new_id; sleep 1; "
+        "b=$(cut -d' ' -f1 /sys/bus/pci/devices/0000:00:00.0/resource | head -1); "
+        "(timeout 10 dd if=/dev/uio0 bs=4 count=1 2>/dev/null | od -An -tu4) & sleep 1; devmem 0xF800A00C 32 1; wait; "
+        "devmem $b+0xC 32 1; grep -c uio /proc/interrupts; echo 1 >/dev/null",
+        r"^\s*1\n",
+        "a CPU doorbell raises INTx: uio_pci_generic delivers one interrupt",
+    ),
+]
+
 
 class Console:
     def __init__(self, port, baud, logf):
@@ -229,6 +268,11 @@ def main():
         action="store_true",
         help="also check the PCIe endpoint registers (bitstream built with -pcie)",
     )
+    ap.add_argument(
+        "--vpcie",
+        action="store_true",
+        help="also check the logical PCIe root complex (bitstream built with -vpcie)",
+    )
     ap.add_argument("--sd", action="store_true", help="also write/read back a 16 MiB file on /data")
     ap.add_argument(
         "--reset",
@@ -260,6 +304,8 @@ def main():
             checks += SD_CHECKS
         if a.pcie:
             checks += PCIE_CHECKS
+        if a.vpcie:
+            checks += VPCIE_CHECKS
         if a.net:
             checks += NET_CHECKS + [
                 (
