@@ -319,12 +319,16 @@ run_hdmi() { # name expect [mutated-file-basename mutated-path] [-P options...]
 	grep -q "TBRESULT.* $want\$" "$b/$n.log" && echo "PASS $n [icarus, expect $want]" || { echo "FAIL $n [expected $want]"; grep -E 'TBRESULT|FAIL' "$b/$n.log" | head -3; fail=1; }
 }
 for f in hdmi_out hdmi_timing hdmi_fetch hdmi_linebuf tmds_ser; do
-	verilator --lint-only -Wall -Wno-DECLFILENAME "$here/tests/rtl/sim_prims.v" "$hd/$f.v" $( [ "$f" = hdmi_out ] && echo "$hd/hdmi_timing.v $hd/hdmi_fetch.v $hd/hdmi_linebuf.v $hd/tmds_encoder.v $hd/tmds_ser.v $hd/axil_simple.v" ) -Wno-PINMISSING -Wno-UNUSEDSIGNAL -Wno-UNUSEDPARAM \
+	extra=()
+	[ "$f" = hdmi_out ] && extra=("$hd/hdmi_timing.v" "$hd/hdmi_fetch.v" "$hd/hdmi_linebuf.v" "$hd/tmds_encoder.v" "$hd/tmds_ser.v" "$hd/axil_simple.v")
+	verilator --lint-only -Wall -Wno-DECLFILENAME "$here/tests/rtl/sim_prims.v" "$hd/$f.v" "${extra[@]}" -Wno-PINMISSING -Wno-UNUSEDSIGNAL -Wno-UNUSEDPARAM \
 		-Wno-WIDTHEXPAND -Wno-WIDTHTRUNC >"$b/lint_$f.log" 2>&1 --top-module "$f" && echo "PASS lint $f" || { echo "FAIL lint $f"; head -5 "$b/lint_$f.log"; fail=1; }
 done
 run_hdmi hdmi_out PASS
+hdmi_srcs=()
+for f in $hdmi_files; do hdmi_srcs+=("$hd/$f.v"); done
 verilator --binary --timing -Wno-fatal -Wno-DECLFILENAME --top-module tb_hdmi_out --Mdir "$b/vl_hd" "$here/tests/rtl/tb_hdmi_out.v" \
-	$(for f in $hdmi_files; do echo "$hd/$f.v"; done) "$here/tests/rtl/sim_prims.v" >"$b/vl_hd.build.log" 2>&1 || { echo "FAIL hdmi_out (verilator build)"; fail=1; }
+	"${hdmi_srcs[@]}" "$here/tests/rtl/sim_prims.v" >"$b/vl_hd.build.log" 2>&1 || { echo "FAIL hdmi_out (verilator build)"; fail=1; }
 timeout 250 "$b/vl_hd/Vtb_hdmi_out" >"$b/vl_hd.log" 2>&1
 grep -q "TBRESULT.* PASS\$" "$b/vl_hd.log" && echo "PASS hdmi_out [verilator]" || { echo "FAIL hdmi_out [verilator]"; fail=1; }
 run_hdmi hdmi_slow PASS "" "" -P tb_hdmi_out.LAT=30 -P tb_hdmi_out.GAP=2
