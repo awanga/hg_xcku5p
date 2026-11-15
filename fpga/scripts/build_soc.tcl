@@ -5,7 +5,7 @@
 # tck_ps: DDR4 clock period; the CPU runs on the controller user clock (tck/4): 750 -> 333.33 MHz (DDR4-2667), 1250 -> 200 MHz.
 # Optional: -ddr8g builds the controller for 8 Gb x16 chips (MT40A512M16HA-075E, 2 GiB) and defines DDR_8G: the DDR4 capacity test (DDRHALF register).
 # A name containing "dma" or "l2" also defines WITH_DMA in soc_top.v.
-# Optional: -pcie adds the PCIe endpoint (XDMA core, window filter, registers at 0xF800A000; needs WITH_DMA) and the shared hub DMA port crossbar.
+# Optional: -vpcie adds the logical PCIe root-complex window (docs/decisions/0008; netlist from gen_vpcie_soc.sh). -pcie adds the PCIe endpoint (XDMA core, window filter, registers at 0xF800A000; needs WITH_DMA) and the shared hub DMA port crossbar.
 set root [file normalize [file join [file dirname [info script]] .. ..]]
 set outdir [file normalize [lindex $argv 0]]
 set soc [lindex $argv 1]
@@ -19,6 +19,9 @@ set strategy ""
 set ddr_part MT40A256M16GE-075E
 set ddr8g [expr {[lsearch $argv "-ddr8g"] >= 0}]
 set pcie [expr {[lsearch $argv "-pcie"] >= 0}]
+set vpcie [expr {[lsearch $argv "-vpcie"] >= 0}]
+if {$pcie && $vpcie} { error "-pcie and -vpcie are different variants (docs/decisions/0008)" }
+if {$vpcie && ![string match "*w4v" $soc]} { error "-vpcie needs the netlist with the 2 MiB peripheral region at 0xF9000000 (fpga/scripts/cpu/gen_vpcie_soc.sh, name ending w4v)" }
 if {$ddr8g} { set ddr_part MT40A512M16HA-075E }
 set i [lsearch $argv "-strategy"]
 if {$i >= 0} { set strategy [lindex $argv [expr {$i + 1}]] }
@@ -58,6 +61,10 @@ set_property -dict [list CONFIG.PROTOCOL AXI4LITE CONFIG.NUM_SI 2 CONFIG.NUM_MI 
     CONFIG.M10_A00_BASE_ADDR 0x00000000F800E000 CONFIG.M10_A00_ADDR_WIDTH 12 \
     CONFIG.M11_A00_BASE_ADDR 0x00000000F800F000 CONFIG.M11_A00_ADDR_WIDTH 12 \
     CONFIG.M12_A00_BASE_ADDR 0x00000000F800A000 CONFIG.M12_A00_ADDR_WIDTH 12] [get_ips xbar_per]
+if {$vpcie} {
+    # logical PCIe device window (ECAM + BAR memory), 2 MiB
+    set_property -dict [list CONFIG.NUM_MI 14 CONFIG.M13_A00_BASE_ADDR 0x00000000F9000000 CONFIG.M13_A00_ADDR_WIDTH 21] [get_ips xbar_per]
+}
 create_ip -name axi_uartlite -vendor xilinx.com -library ip -module_name uart_0
 set_property -dict [list CONFIG.C_BAUDRATE 230400 CONFIG.C_S_AXI_ACLK_FREQ_HZ 100000000] [get_ips uart_0]
 # AXI GPIO (DS18B20 1-Wire, buzzer, fan tach) and AXI Timer (fan PWM): both have upstream Linux drivers (gpio-xilinx, pwm-xilinx).
@@ -91,7 +98,11 @@ if {$pcie} {
     add_files [list $root/fpga/rtl/pcie_ep.v $root/fpga/rtl/pcie_regs.v $root/fpga/rtl/axi_win.v $root/fpga/rtl/cdc_cfg.v]
     add_files -fileset constrs_1 $root/fpga/constraints/pcie.xdc
 }
+if {$vpcie} {
+    add_files [list $root/fpga/rtl/vpcie_ep.v $root/fpga/rtl/vpcie.v $root/fpga/rtl/pcie_regs.v]
+}
 set defs [list SOC_MODULE=$soc]
+if {$vpcie} { lappend defs WITH_VPCIE }
 if {$pcie} { lappend defs WITH_PCIE }
 if {[string match "*dma*" $soc] || [string match "*l2*" $soc]} { lappend defs WITH_DMA }
 if {$ddr8g} { lappend defs DDR_8G }

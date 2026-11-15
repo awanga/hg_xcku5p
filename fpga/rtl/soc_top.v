@@ -11,6 +11,14 @@
 // `define WITH_DMA when the SoC netlist was generated with --with-dma (the coherent DMA port is tied off).
 // `define WITH_PCIE (build_soc.tcl -pcie) adds the PCIe endpoint (fpga/rtl/pcie_ep.v): registers at 0xF800A000, PLIC source 9, a DMA window into DDR
 //   that stays closed until the CPU opens it, and a crossbar that shares the hub DMA port between the Ethernet copy engine, HDMI and PCIe.
+// `define WITH_VPCIE (build_soc.tcl -vpcie, needs the netlist with the extra 2 MiB peripheral region) replaces the endpoint by a logical PCIe device behind a
+//   generic ECAM host bridge for the CPU itself (fpga/rtl/vpcie_ep.v): registers still at 0xF800A000 (PLIC source 9), the bridge window at 0xF9000000
+//   (crossbar slave 13), the device's INTx on PLIC source 10. No GTY, no XDMA, no DMA port sharing.
+`ifdef WITH_VPCIE
+`define NMST 14
+`else
+`define NMST 13
+`endif
 module soc_top #(
     parameter integer CPU_KHZ = 333333, // ui_clk in kHz, reported by soc_regs; keep in step with the DDR4 TimePeriod
     parameter ROM_INIT = "boot_rom.hex"
@@ -161,11 +169,19 @@ module soc_top #(
     // The peripheral interrupts come from per_clk; synchronize them into the CPU clock before they reach the PLIC gateways.
     // PLIC sources: 1 UART lite, 2 SPI (SD), 3 LiteEth, 4 SPI (MS5611), 5 GPIO.
     wire        spi1_irq_level, spi1_irq, gpio_irq;
-    wire [8:0]  irq_sync_q;
     wire        i2c0_irq, i2c1_irq, dma_irq, pcie_irq;
     // 6 SPI (MS5611) is source 4, 7 and 8 are the AXI IIC buses and the Ethernet copy engine, 9 is the PCIe doorbell
+`ifdef WITH_VPCIE
+    // 10 is the logical PCIe device's INTx
+    wire        vpcie_intx;
+    wire [9:0]  irq_sync_q;
+    irq_sync #(.W(10)) u_irq_sync (.clk(cpu_clk), .d({vpcie_intx, pcie_irq, dma_irq, i2c1_irq, i2c0_irq, gpio_irq, spi1_irq, eth_irq, spi_irq, uart_irq}), .q(irq_sync_q));
+    wire [31:0] irq = {21'd0, irq_sync_q, 1'b0};
+`else
+    wire [8:0]  irq_sync_q;
     irq_sync #(.W(9)) u_irq_sync (.clk(cpu_clk), .d({pcie_irq, dma_irq, i2c1_irq, i2c0_irq, gpio_irq, spi1_irq, eth_irq, spi_irq, uart_irq}), .q(irq_sync_q));
     wire [31:0] irq = {22'd0, irq_sync_q, 1'b0};
+`endif
 
 `ifdef WITH_DMA
     // Hub DMA port, driven by the eth_dma engine through cc_dma (write only; the read channels are tied off).
@@ -323,12 +339,12 @@ ddr4_0 u_ddr4 (
     // 5 AXI GPIO 0xF8003000, 6 AXI Timer (PWM) 0xF8004000, 7 SPI (MS5611) 0xF8005000,
     // 8 AXI IIC (PL_I2C) 0xF8006000, 9 AXI IIC (second bus) 0xF8007000, 10 eth_dma 0xF800E000, 11 HDMI scan-out 0xF800F000,
     // 12 PCIe endpoint registers 0xF800A000 (a stub that answers 0 without the endpoint; the LiteEth window is 8 KiB, its CSRs end below 0xF800A000)
-    wire [415:0] x_awaddr, x_araddr, x_wdata, x_rdata;
-    wire [38:0] x_awprot, x_arprot;
-    wire [51:0] x_wstrb;
-    wire [25:0] x_bresp, x_rresp;
-    wire [12:0] x_awvalid, x_awready, x_wvalid, x_wready, x_bvalid, x_bready;
-    wire [12:0] x_arvalid, x_arready, x_rvalid, x_rready;
+    wire [32*`NMST-1:0] x_awaddr, x_araddr, x_wdata, x_rdata;
+    wire [3*`NMST-1:0] x_awprot, x_arprot;
+    wire [4*`NMST-1:0] x_wstrb;
+    wire [2*`NMST-1:0] x_bresp, x_rresp;
+    wire [`NMST-1:0] x_awvalid, x_awready, x_wvalid, x_wready, x_bvalid, x_bready;
+    wire [`NMST-1:0] x_arvalid, x_arready, x_rvalid, x_rready;
 
     // second crossbar master: the DMA engine's source reads (write channels tied off)
     wire [31:0] dm_araddr, dm_rdata;
@@ -749,7 +765,23 @@ ddr4_0 u_ddr4 (
     assign h_rresp = 2'b00;
 `endif
 
+`ifdef WITH_VPCIE
+    vpcie_ep u_vpcie_ep (
+        .clk(per_clk), .rst_n(per_rst_n),
+        .s_awaddr(x_awaddr[436:416]), .s_awvalid(x_awvalid[13]), .s_awready(x_awready[13]),
+        .s_wdata(x_wdata[447:416]), .s_wstrb(x_wstrb[55:52]), .s_wvalid(x_wvalid[13]), .s_wready(x_wready[13]),
+        .s_bresp(x_bresp[27:26]), .s_bvalid(x_bvalid[13]), .s_bready(x_bready[13]),
+        .s_araddr(x_araddr[436:416]), .s_arvalid(x_arvalid[13]), .s_arready(x_arready[13]),
+        .s_rdata(x_rdata[447:416]), .s_rresp(x_rresp[27:26]), .s_rvalid(x_rvalid[13]), .s_rready(x_rready[13]),
+        .c_awaddr(x_awaddr[390:384]), .c_awvalid(x_awvalid[12]), .c_awready(x_awready[12]),
+        .c_wdata(x_wdata[415:384]), .c_wstrb(x_wstrb[51:48]), .c_wvalid(x_wvalid[12]), .c_wready(x_wready[12]),
+        .c_bresp(x_bresp[25:24]), .c_bvalid(x_bvalid[12]), .c_bready(x_bready[12]),
+        .c_araddr(x_araddr[390:384]), .c_arvalid(x_arvalid[12]), .c_arready(x_arready[12]),
+        .c_rdata(x_rdata[415:384]), .c_rresp(x_rresp[25:24]), .c_rvalid(x_rvalid[12]), .c_rready(x_rready[12]),
+        .irq(pcie_irq), .intx(vpcie_intx));
+`endif
 `ifndef WITH_PCIE
+`ifndef WITH_VPCIE
     // PCIe register slot (crossbar slave 12) without the endpoint: reads return 0, writes are ignored
     assign pcie_irq = 1'b0;
     axil_simple #(.AW(7)) u_nopcie (
@@ -760,5 +792,6 @@ ddr4_0 u_ddr4 (
         .s_araddr(x_araddr[390:384]), .s_arvalid(x_arvalid[12]), .s_arready(x_arready[12]),
         .s_rdata(x_rdata[415:384]), .s_rresp(x_rresp[25:24]), .s_rvalid(x_rvalid[12]), .s_rready(x_rready[12]),
         .addr(), .we(), .wdata(), .wstrb(), .re(), .rdata(32'd0));
+`endif
 `endif
 endmodule
