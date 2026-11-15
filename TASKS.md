@@ -220,7 +220,7 @@
 
 - [x] HDMI output (input excluded by owner): 1024x768@60 DVI-style TMDS, fb console on a monitor. (2026-11-15: docs/validation/hdmi-output.md; HPD unresolved, one monitor tested, no EDID. HDMI input not built: owner decision)
 - [ ] FMC HPC interface experiments and documented constraints.
-- [ ] PCIe endpoint or host functionality, if the carrier wiring and use case justify it.
+- [-] PCIe endpoint or host functionality, if the carrier wiring and use case justify it. (2026-11-15: endpoint built (`build_soc.tcl -pcie`, WNS +0.000), verified in xsim with the vendor root-port bench and on the board at register level; link/DMA on silicon untested (no slot): docs/validation/pcie-endpoint.md. Variants without the hard IP: docs/decisions/0008, proposal. Refclk: edge connector = bank 224 REFCLK0 (used by the endpoint build), X2 = bank 225 REFCLK1 (reserved for a host build), owner-stated 2026-11-15)
 - [ ] 100G optical port: GTY transceiver bring-up, reference clocks, MAC/PCS/FEC, licensing, link partner, and performance validation. Keep isolated from MVP until explicitly reprioritized.
 - [ ] Optional auxiliary microcontroller core for sensor/control functions if it demonstrably reduces CPU interrupts or simplifies architecture.
 - [ ] Security hardening, signed boot/update, production image policy, and formal long-term maintenance plan if the platform moves beyond personal development use.

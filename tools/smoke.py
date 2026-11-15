@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MIT
 """Hardware smoke test: log in on the board console, run checks, archive the log, print PASS/FAIL per check.
 
-usage: smoke.py [--port /dev/ttyUSB2] [--baud 230400] [--log DIR] [--net HOST] [--sd] [--reset flash|FILE.bit] [--wait SECONDS]
+usage: smoke.py [--port /dev/ttyUSB2] [--baud 230400] [--log DIR] [--net HOST] [--sd] [--pcie] [--reset flash|FILE.bit] [--wait SECONDS]
 
 The board must already be running Linux (power cycle, flash boot or SD boot). The log (build/smoke/<time>.log by
 default) records the kernel, CPU clock, board register values and every command with its output, which identifies
@@ -116,6 +116,43 @@ NET_CHECKS = [
     ),
 ]
 
+# PCIe endpoint registers (build_soc.tcl -pcie; CPU window at 0xF800A000, fpga/rtl/pcie_regs.v). No slot is plugged in on the bench, so the link is down
+# so the link stays down. The PCIe user clock (STATUS bit 1) was seen running without a slot (2026-11-15), cause not established (X2 feeds bank 225, not
+# the PCIe pair): informational only. The checks prove the registers answer and keep their contract.
+PCIE_CHECKS = [
+    (
+        "pcie_id",
+        "devmem 0xF800A000 32",
+        r"0x50434901",
+        "PCIe register block identifies (0x50434901)",
+    ),
+    (
+        "pcie_no_link",
+        "devmem 0xF800A004 32",
+        r"0x[0-9A-Fa-f]{6}[014589CD][02468ACE]\b",
+        "STATUS: link down and never up (no slot); clock and PERST# bits are informational",
+    ),
+    (
+        "pcie_window_closed",
+        "devmem 0xF800A074 32",
+        r"0x00000000",
+        "DMA window closed after reset (WIN_SIZE 0)",
+    ),
+    (
+        "pcie_mailbox",
+        "devmem 0xF800A020 32 0xA5A55A5A; devmem 0xF800A020 32; devmem 0xF800A020 32 0",
+        r"0xA5A55A5A",
+        "CPU mailbox word reads back",
+    ),
+    (
+        "pcie_window_rw",
+        "devmem 0xF800A070 32 0x7E000000; devmem 0xF800A074 32 0x01000000; devmem 0xF800A070 32; "
+        "devmem 0xF800A074 32; devmem 0xF800A074 32 0; devmem 0xF800A070 32 0",
+        r"0x7E000000\s+0x01000000",
+        "window base/size registers read back (and are closed again)",
+    ),
+]
+
 
 class Console:
     def __init__(self, port, baud, logf):
@@ -187,6 +224,11 @@ def main():
         "--log", default=os.path.join(os.path.dirname(__file__), "..", "build", "smoke")
     )
     ap.add_argument("--net", metavar="HOST", help="also check the Ethernet link and ping HOST")
+    ap.add_argument(
+        "--pcie",
+        action="store_true",
+        help="also check the PCIe endpoint registers (bitstream built with -pcie)",
+    )
     ap.add_argument("--sd", action="store_true", help="also write/read back a 16 MiB file on /data")
     ap.add_argument(
         "--reset",
@@ -216,6 +258,8 @@ def main():
         checks = list(CHECKS)
         if a.sd:
             checks += SD_CHECKS
+        if a.pcie:
+            checks += PCIE_CHECKS
         if a.net:
             checks += NET_CHECKS + [
                 (

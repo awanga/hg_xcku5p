@@ -345,5 +345,87 @@ mut_hdmi hd_addr hdmi_fetch "s/base_q + line_no \* LINE_BYTES/base_q + line_no *
 mut_hdmi hd_bank hdmi_fetch "s/bank <= line_no\[0\];/bank <= ~line_no[0];/"
 mut_hdmi hd_base hdmi_fetch "s/if (line_no == 10'd0) begin/if (1'b1) begin/"
 mut_hdmi hd_ser tmds_ser "s/.D1(sh\[0\]), .D2(sh\[1\])/.D1(sh[1]), .D2(sh[0])/"
+# pcie_regs (host/CPU shared registers of the PCIe endpoint)
+prg=$here/fpga/rtl/pcie_regs.v
+tbp=$here/tests/rtl/tb_pcie_regs.v
+verilator --lint-only -Wall -Wno-DECLFILENAME "$prg" "$here/fpga/rtl/axil_simple.v" >"$b/lint_prg.log" 2>&1 && echo "PASS lint pcie_regs" || {
+	echo "FAIL lint pcie_regs"; head "$b/lint_prg.log"; fail=1; }
+run_prg() { # name dut expect
+	iverilog -g2005 -o "$b/$1.vvp" "$tbp" "$2" "$here/fpga/rtl/axil_simple.v" >"$b/$1.build.log" 2>&1 || { echo "FAIL $1 (build)"; fail=1; return; }
+	timeout 250 vvp "$b/$1.vvp" >"$b/$1.log" 2>&1
+	grep -q "TBRESULT.* $3\$" "$b/$1.log" && echo "PASS $1 [icarus, expect $3]" || { echo "FAIL $1 [expected $3]"; grep -E 'TBRESULT|FAIL' "$b/$1.log" | head -3; fail=1; }
+}
+run_prg pcie_regs "$prg" PASS
+verilator --binary --timing -Wno-fatal -Wno-DECLFILENAME --top-module tb_pcie_regs --Mdir "$b/vl_prg" "$tbp" "$prg" "$here/fpga/rtl/axil_simple.v" >"$b/vl_prg.build.log" 2>&1 || {
+	echo "FAIL pcie_regs (verilator build)"; fail=1; }
+timeout 250 "$b/vl_prg/Vtb_pcie_regs" >"$b/vl_prg.log" 2>&1
+grep -q "TBRESULT.* PASS\$" "$b/vl_prg.log" && echo "PASS pcie_regs [verilator]" || { echo "FAIL pcie_regs [verilator]"; fail=1; }
+mut_prg() { # name sed-expression
+	sed "$2" "$prg" >"$b/mut_$1.v"
+	cmp -s "$prg" "$b/mut_$1.v" && { echo "FAIL mutant $1 unchanged"; fail=1; }
+	run_prg "mut_$1" "$b/mut_$1.v" FAIL
+}
+mut_prg prg_setwins "s/host_db <= (host_db \& ~(c_db_clr ? c_wd : 32'd0)) | (h_db_set ? h_wd : 32'd0);/host_db <= (host_db | (h_db_set ? h_wd : 32'd0)) \& ~(c_db_clr ? c_wd : 32'd0);/"
+mut_prg prg_hostien "s/if (c_we \&\& c_addr\[6:2\] == 5'd4) ien <= c_wd\[0\];/if ((c_we \&\& c_addr[6:2] == 5'd4) || (h_we \&\& h_addr[6:2] == 5'd4)) ien <= c_we ? c_wd[0] : h_wd[0];/"
+mut_prg prg_noien "s/assign irq = ien \&\& (|host_db);/assign irq = |host_db;/"
+mut_prg prg_hostwins "s/if (c_mb) mbox\[c_mi\] <= c_wd;//; s/if (h_mb) mbox\[h_mi\] <= h_wd;/if (c_mb) mbox[c_mi] <= c_wd;\n        if (h_mb) mbox[h_mi] <= h_wd;/"
+mut_prg prg_rdcnt "s/if (h_re) host_rd <= host_rd + 32'd1;/if (h_re || c_re) host_rd <= host_rd + 32'd1;/"
+mut_prg prg_wrcnt "s/if (h_we) host_wr <= host_wr + 32'd1;/if (h_we || c_we) host_wr <= host_wr + 32'd1;/"
+mut_prg prg_alive "s/alive_cnt <= 16'hFFFF;/alive_cnt <= 16'h00FF;/"
+mut_prg prg_hostwin "s/if (c_we \&\& c_addr\[6:2\] == 5'd29) wsize <= c_wd;/if (h_we \&\& h_addr[6:2] == 5'd29) wsize <= h_wd; if (c_we \&\& c_addr[6:2] == 5'd29) wsize <= c_wd;/"
+mut_prg prg_hostrdwin "s/5'd29: rd = cpu ? wsize : 32'd0;/5'd29: rd = wsize;/"
+mut_prg prg_winrst "s/            wsize <= 32'd0;\n//; s/wsize <= 32'd0;/wsize <= wsize;/"
+mut_prg prg_sticky "s/else if (c_we \&\& c_addr\[6:2\] == 5'd1 \&\& c_wd\[5\]) ever_up <= 1'b0;/else ever_up <= 1'b0;/"
+# axi_win (AXI4 window filter of the PCIe DMA master)
+aw=$here/fpga/rtl/axi_win.v
+tbw=$here/tests/rtl/tb_axi_win.v
+verilator --lint-only -Wall -Wno-DECLFILENAME "$aw" >"$b/lint_aw.log" 2>&1 && echo "PASS lint axi_win" || {
+	echo "FAIL lint axi_win"; head "$b/lint_aw.log"; fail=1; }
+run_aw() { # name dut stall expect
+	iverilog -g2005 -o "$b/$1.vvp" -P tb_axi_win.STALL="$3" "$tbw" "$2" >"$b/$1.build.log" 2>&1 || { echo "FAIL $1 (build)"; fail=1; return; }
+	timeout 250 vvp "$b/$1.vvp" >"$b/$1.log" 2>&1
+	grep -q "TBRESULT.* $4\$" "$b/$1.log" && echo "PASS $1 [icarus, expect $4]" || { echo "FAIL $1 [expected $4]"; grep -E 'TBRESULT|FAIL' "$b/$1.log" | head -3; fail=1; }
+}
+run_aw axi_win_s0 "$aw" 0 PASS
+run_aw axi_win_s1 "$aw" 1 PASS
+verilator --binary --timing -Wno-fatal -Wno-DECLFILENAME --top-module tb_axi_win --Mdir "$b/vl_aw" "$tbw" "$aw" >"$b/vl_aw.build.log" 2>&1 || {
+	echo "FAIL axi_win (verilator build)"; fail=1; }
+timeout 250 "$b/vl_aw/Vtb_axi_win" >"$b/vl_aw.log" 2>&1
+grep -q "TBRESULT.* PASS\$" "$b/vl_aw.log" && echo "PASS axi_win [verilator]" || { echo "FAIL axi_win [verilator]"; fail=1; }
+mut_aw() { # name sed-expression
+	sed "$2" "$aw" >"$b/mut_$1.v"
+	cmp -s "$aw" "$b/mut_$1.v" && { echo "FAIL mutant $1 unchanged"; fail=1; }
+	run_aw "mut_$1" "$b/mut_$1.v" 1 FAIL
+}
+mut_aw aw_end "s/({1'b0, win_size} >= w_end)/({1'b0, win_size} + 33'd1 >= w_end)/"
+mut_aw aw_exact "s/({1'b0, win_size} >= w_end)/({1'b0, win_size} > w_end)/"
+mut_aw aw_rend "s/({1'b0, win_size} >= r_end)/({1'b0, win_size} + 33'd1 >= r_end)/"
+mut_aw aw_hi "s/w_ok <= !w_hi \&\& /w_ok <= /"
+mut_aw aw_lo "s/w_ok <= !w_hi \&\& w_ge \&\& /w_ok <= !w_hi \&\& /"
+mut_aw aw_rlo "s/r_ok <= !r_hi \&\& r_ge \&\& /r_ok <= !r_hi \&\& /"
+mut_aw aw_decerr "s/localparam \[1:0\] DECERR = 2'b11;/localparam [1:0] DECERR = 2'b10;/"
+mut_aw aw_rlast "s/s_rlast = (rcnt == elen);/s_rlast = (rcnt == elen + 8'd1);/"
+mut_aw aw_rid "s/s_rid = eid;/s_rid = 4'd0;/"
+mut_aw aw_drain "s/WX: if (s_wvalid \&\& s_wlast) wst <= WE;/WX: wst <= WE;/"
+# cdc_cfg (configuration bus between clock domains), both speed ratios
+cc=$here/fpga/rtl/cdc_cfg.v
+tbc=$here/tests/rtl/tb_cdc_cfg.v
+verilator --lint-only -Wall -Wno-DECLFILENAME "$cc" >"$b/lint_cc.log" 2>&1 && echo "PASS lint cdc_cfg" || {
+	echo "FAIL lint cdc_cfg"; head "$b/lint_cc.log"; fail=1; }
+run_cc() { # name dut expect src_half dst_half
+	iverilog -g2005 -o "$b/$1.vvp" -P tb_cdc_cfg.SRC_HALF="$4" -P tb_cdc_cfg.DST_HALF="$5" "$tbc" "$2" >"$b/$1.build.log" 2>&1 || { echo "FAIL $1 (build)"; fail=1; return; }
+	timeout 250 vvp "$b/$1.vvp" >"$b/$1.log" 2>&1
+	grep -q "TBRESULT.* $3\$" "$b/$1.log" && echo "PASS $1 [icarus, expect $3]" || { echo "FAIL $1 [expected $3]"; grep -E 'TBRESULT|FAIL' "$b/$1.log" | head -3; fail=1; }
+}
+run_cc cdc_cfg_fast_src "$cc" PASS 1500 5000
+run_cc cdc_cfg_slow_src "$cc" PASS 5000 1500
+mut_cc() { # name sed-expression
+	sed "$2" "$cc" >"$b/mut_$1.v"
+	cmp -s "$cc" "$b/mut_$1.v" && { echo "FAIL mutant $1 unchanged"; fail=1; }
+	run_cc "mut_$1" "$b/mut_$1.v" FAIL 1500 5000
+}
+mut_cc cc_busy "s/if (ack_s\[1\] == req) busy <= 1'b0;/if (ack_s[1] == req) busy <= 1'b1;/"
+mut_cc cc_rst "s/            q <= {W{1'b0}};//"
+mut_cc cc_noack "s/ack <= req_s\[1\];/ack <= ack;/"
 [ "$fail" = 0 ] && echo "ALL PASS" || echo "FAILURES"
 exit "$fail"
