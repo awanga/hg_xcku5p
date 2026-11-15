@@ -58,7 +58,7 @@ done || missing=1
 	echo "git_commit: $(git -C "$here" rev-parse HEAD)"
 	echo "git_dirty: $([ -n "$(git -C "$here" status --porcelain --untracked-files=no)" ] && echo yes || echo no)"
 	echo "date_utc: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-	echo "vivado: ${VIVADO_VERSION:-$(vivado -version 2>/dev/null | head -1 || echo unknown)}"
+	echo "vivado: ${VIVADO_VERSION:-$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['vivado'])" "$bit_report" 2>/dev/null || echo unknown)}"
 	echo "soc_netlist: soc_l2u_128k_w4 (fpga/scripts/cpu/gen_default_soc.sh)"
 	echo "sources: see docs/versions.md (fetched by scripts/fetch_sources.sh)"
 	echo "recovery: docs/recovery-flash-boot.md, docs/recovery-factory.md"
