@@ -170,25 +170,29 @@ VPCIE_CHECKS = [
     ),
     (
         "vpcie_bar_id",
+        "setpci -s 00:00.0 COMMAND=0002; "
         "b=$(cut -d' ' -f1 /sys/bus/pci/devices/0000:00:00.0/resource | head -1); devmem $b 32",
         r"0x50434901",
         "BAR0 +0 reads the register block ID through the bridge",
     ),
     (
         "vpcie_mailbox",
-        "b=$(cut -d' ' -f1 /sys/bus/pci/devices/0000:00:00.0/resource | head -1); devmem $b+0x20 32 0xC0FFEE11; "
-        "devmem 0xF800A020 32; devmem 0xF800A024 32 0x1BADB002; devmem $b+0x24 32",
+        "b=$(cut -d' ' -f1 /sys/bus/pci/devices/0000:00:00.0/resource | head -1); devmem $((b+0x20)) 32 0xC0FFEE11; "
+        "devmem 0xF800A020 32; devmem 0xF800A024 32 0x1BADB002; devmem $((b+0x24)) 32",
         r"0xC0FFEE11\s+0x1BADB002",
         "host-side BAR0 and CPU-side register windows see the same mailbox",
     ),
     (
         "vpcie_intx",
-        "echo 10ee 9034 >/sys/bus/pci/drivers/uio_pci_generic/new_id; sleep 1; "
+        "echo 10ee 9034 >/sys/bus/pci/drivers/uio_pci_generic/new_id 2>/dev/null; sleep 1; "
         "b=$(cut -d' ' -f1 /sys/bus/pci/devices/0000:00:00.0/resource | head -1); "
-        "(timeout 10 dd if=/dev/uio0 bs=4 count=1 2>/dev/null | od -An -tu4) & sleep 1; devmem 0xF800A00C 32 1; wait; "
-        "devmem $b+0xC 32 1; grep -c uio /proc/interrupts; echo 1 >/dev/null",
-        r"^\s*1\n",
-        "a CPU doorbell raises INTx: uio_pci_generic delivers one interrupt",
+        "n() { awk '/uio_pci_generic/ {print $2}' /proc/interrupts; }; "
+        "devmem $((b+0xC)) 32 0xFFFFFFFF; setpci -s 00:00.0 COMMAND=0002; a=$(n); "
+        "devmem 0xF800A00C 32 1; sleep 1; z=$(n); "
+        "echo delta=$((z-a)) status=$(setpci -s 00:00.0 STATUS); "
+        "devmem $((b+0xC)) 32 0xFFFFFFFF; setpci -s 00:00.0 COMMAND=0002",
+        r"^delta=1 status=0[0-9a-f]{2}8$",
+        "a CPU doorbell raises INTx: one interrupt through the PLIC to uio_pci_generic and the status INTx bit",
     ),
 ]
 
