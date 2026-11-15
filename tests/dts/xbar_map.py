@@ -20,6 +20,9 @@ for line in open(csv):
     want[(int(m), int(rng))] = (int(base, 16), int(width))
 
 text = open(tcl).read()
+# only the peripheral crossbar (xbar_per) is described by the table; xbar_dma (the shared DMA port) has one range covering all memory
+start = text.index("module_name xbar_per")
+text = text[start : text.index("create_ip", start + 1)]
 base = {
     (int(m), int(r)): int(v, 16)
     for m, r, v in re.findall(r"CONFIG\.M(\d+)_A(\d+)_BASE_ADDR\s+0x([0-9A-Fa-f]+)", text)

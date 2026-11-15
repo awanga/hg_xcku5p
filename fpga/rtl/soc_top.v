@@ -9,6 +9,8 @@
 // Address map (see docs/validation/soc-minimal.md): DDR4 0x4000_0000 (1 GiB), boot ROM 0x1000_0000 (16 KiB, mirrored in 64 KiB),
 //   UART lite 0xF800_0000, board regs 0xF800_1000, CLINT 0xF001_0000, PLIC 0xF0C0_0000.
 // `define WITH_DMA when the SoC netlist was generated with --with-dma (the coherent DMA port is tied off).
+// `define WITH_PCIE (build_soc.tcl -pcie) adds the PCIe endpoint (fpga/rtl/pcie_ep.v): registers at 0xF800A000, PLIC source 9, a DMA window into DDR
+//   that stays closed until the CPU opens it, and a crossbar that shares the hub DMA port between the Ethernet copy engine, HDMI and PCIe.
 module soc_top #(
     parameter integer CPU_KHZ = 333333, // ui_clk in kHz, reported by soc_regs; keep in step with the DDR4 TimePeriod
     parameter ROM_INIT = "boot_rom.hex"
@@ -62,6 +64,16 @@ module soc_top #(
     output wire [2:0]  hdmi_d_n,
     output wire        hdmi_oe,
     input  wire        hdmi_hpd,
+`ifdef WITH_PCIE
+    // PCIe edge connector (Gen3 x4, GTY quad 224): slot reference clock, PERST# (bank 66, VADJ), lanes
+    input  wire        pcie_refclk_p,
+    input  wire        pcie_refclk_n,
+    input  wire        pcie_perst_n,
+    output wire [3:0]  pcie_txp,
+    output wire [3:0]  pcie_txn,
+    input  wire [3:0]  pcie_rxp,
+    input  wire [3:0]  pcie_rxn,
+`endif
     // RTL8211EG in GMII mode (bank 87, 3.3 V). MDC/MDIO/INT/COL/CRS have no FPGA pin.
     input  wire        eth_rx_clk,
     output wire        eth_gtx_clk,
@@ -149,10 +161,11 @@ module soc_top #(
     // The peripheral interrupts come from per_clk; synchronize them into the CPU clock before they reach the PLIC gateways.
     // PLIC sources: 1 UART lite, 2 SPI (SD), 3 LiteEth, 4 SPI (MS5611), 5 GPIO.
     wire        spi1_irq_level, spi1_irq, gpio_irq;
-    wire [7:0]  irq_sync_q;
-    wire        i2c0_irq, i2c1_irq, dma_irq;
-    irq_sync #(.W(8)) u_irq_sync (.clk(cpu_clk), .d({dma_irq, i2c1_irq, i2c0_irq, gpio_irq, spi1_irq, eth_irq, spi_irq, uart_irq}), .q(irq_sync_q));
-    wire [31:0] irq = {23'd0, irq_sync_q, 1'b0};
+    wire [8:0]  irq_sync_q;
+    wire        i2c0_irq, i2c1_irq, dma_irq, pcie_irq;
+    // 6 SPI (MS5611) is source 4, 7 and 8 are the AXI IIC buses and the Ethernet copy engine, 9 is the PCIe doorbell
+    irq_sync #(.W(9)) u_irq_sync (.clk(cpu_clk), .d({pcie_irq, dma_irq, i2c1_irq, i2c0_irq, gpio_irq, spi1_irq, eth_irq, spi_irq, uart_irq}), .q(irq_sync_q));
+    wire [31:0] irq = {22'd0, irq_sync_q, 1'b0};
 
 `ifdef WITH_DMA
     // Hub DMA port, driven by the eth_dma engine through cc_dma (write only; the read channels are tied off).
@@ -167,7 +180,7 @@ module soc_top #(
     wire [7:0]  dma_arlen;
     wire [2:0]  dma_arsize;
     wire [1:0]  dma_arburst;
-    wire [3:0]  dma_bid, dma_rid;
+    wire [3:0]  dma_bid, dma_rid, dma_awid, dma_arid;
     wire [1:0]  dma_bresp, dma_rresp;
 `endif
 
@@ -189,12 +202,12 @@ module soc_top #(
         .pBus_arvalid(p_arvalid), .pBus_arready(p_arready), .pBus_araddr(p_araddr), .pBus_arprot(p_arprot),
         .pBus_rvalid(p_rvalid), .pBus_rready(p_rready), .pBus_rdata(p_rdata), .pBus_rresp(p_rresp),
 `ifdef WITH_DMA
-        .dma_bus_awvalid(dma_awvalid), .dma_bus_awready(dma_awready), .dma_bus_awaddr(dma_awaddr), .dma_bus_awid(4'd0),
+        .dma_bus_awvalid(dma_awvalid), .dma_bus_awready(dma_awready), .dma_bus_awaddr(dma_awaddr), .dma_bus_awid(dma_awid),
         .dma_bus_awregion(4'd0), .dma_bus_awlock(1'b0), .dma_bus_awcache(4'd0), .dma_bus_awqos(4'd0), .dma_bus_awprot(3'd0),
         .dma_bus_awlen(dma_awlen), .dma_bus_awsize(dma_awsize), .dma_bus_awburst(dma_awburst),
         .dma_bus_wvalid(dma_wvalid), .dma_bus_wready(dma_wready), .dma_bus_wdata(dma_wdata), .dma_bus_wstrb(dma_wstrb), .dma_bus_wlast(dma_wlast),
         .dma_bus_bvalid(dma_bvalid), .dma_bus_bready(dma_bready), .dma_bus_bid(dma_bid), .dma_bus_bresp(dma_bresp),
-        .dma_bus_arvalid(dma_arvalid), .dma_bus_arready(dma_arready), .dma_bus_araddr(dma_araddr), .dma_bus_arid(4'd0),
+        .dma_bus_arvalid(dma_arvalid), .dma_bus_arready(dma_arready), .dma_bus_araddr(dma_araddr), .dma_bus_arid(dma_arid),
         .dma_bus_arregion(4'd0), .dma_bus_arlock(1'b0), .dma_bus_arcache(4'd0), .dma_bus_arqos(4'd0), .dma_bus_arprot(3'd0),
         .dma_bus_arlen(dma_arlen), .dma_bus_arsize(dma_arsize), .dma_bus_arburst(dma_arburst),
         .dma_bus_rvalid(dma_rvalid), .dma_bus_rready(dma_rready), .dma_bus_rdata(dma_rdata), .dma_bus_rid(dma_rid),
@@ -308,13 +321,14 @@ ddr4_0 u_ddr4 (
 
     // crossbar masters: 0 UART lite, 1 board regs, 2 boot ROM, 3 SPI (SD card), 4 LiteEth (CSR/MDIO 0xF8008000 16 KiB and packet buffers 0xF800C000 8 KiB, remapped below),
     // 5 AXI GPIO 0xF8003000, 6 AXI Timer (PWM) 0xF8004000, 7 SPI (MS5611) 0xF8005000,
-    // 8 AXI IIC (PL_I2C) 0xF8006000, 9 AXI IIC (second bus) 0xF8007000, 10 eth_dma 0xF800E000, 11 HDMI scan-out 0xF800F000
-    wire [383:0] x_awaddr, x_araddr, x_wdata, x_rdata;
-    wire [35:0] x_awprot, x_arprot;
-    wire [47:0] x_wstrb;
-    wire [23:0] x_bresp, x_rresp;
-    wire [11:0] x_awvalid, x_awready, x_wvalid, x_wready, x_bvalid, x_bready;
-    wire [11:0] x_arvalid, x_arready, x_rvalid, x_rready;
+    // 8 AXI IIC (PL_I2C) 0xF8006000, 9 AXI IIC (second bus) 0xF8007000, 10 eth_dma 0xF800E000, 11 HDMI scan-out 0xF800F000,
+    // 12 PCIe endpoint registers 0xF800A000 (a stub that answers 0 without the endpoint; the LiteEth window is 8 KiB, its CSRs end below 0xF800A000)
+    wire [415:0] x_awaddr, x_araddr, x_wdata, x_rdata;
+    wire [38:0] x_awprot, x_arprot;
+    wire [51:0] x_wstrb;
+    wire [25:0] x_bresp, x_rresp;
+    wire [12:0] x_awvalid, x_awready, x_wvalid, x_wready, x_bvalid, x_bready;
+    wire [12:0] x_arvalid, x_arready, x_rvalid, x_rready;
 
     // second crossbar master: the DMA engine's source reads (write channels tied off)
     wire [31:0] dm_araddr, dm_rdata;
@@ -552,6 +566,14 @@ ddr4_0 u_ddr4 (
         .m_awaddr(e_awaddr), .m_awvalid(e_awvalid), .m_awready(e_awready), .m_wdata(e_wdata), .m_wstrb(e_wstrb),
         .m_wvalid(e_wvalid), .m_wready(e_wready), .m_bresp(e_bresp), .m_bvalid(e_bvalid), .m_bready(e_bready), .irq(dma_irq));
 `ifdef WITH_DMA
+    // eth_dma write master (cc_dma output, cpu_clk) and HDMI read master (cc_dmar output): the hub DMA port is shared by them, and by PCIe with WITH_PCIE
+    wire        ew_awvalid, ew_awready, ew_wvalid, ew_wready, ew_wlast, ew_bvalid, ew_bready;
+    wire [31:0] ew_awaddr;
+    wire [7:0]  ew_awlen, ew_wstrb;
+    wire [2:0]  ew_awsize;
+    wire [1:0]  ew_awburst, ew_bresp;
+    wire [63:0] ew_wdata;
+    wire [3:0]  ew_bid;
     cc_dma u_cc_dma (
         .s_axi_aclk(per_clk), .s_axi_aresetn(per_rst_n),
         .s_axi_awid(4'd0), .s_axi_awaddr(e_awaddr), .s_axi_awlen(8'd0), .s_axi_awsize(3'd3), .s_axi_awburst(2'd1),
@@ -560,11 +582,11 @@ ddr4_0 u_ddr4 (
         .s_axi_wdata(e_wdata), .s_axi_wstrb(e_wstrb), .s_axi_wlast(1'b1), .s_axi_wvalid(e_wvalid), .s_axi_wready(e_wready),
         .s_axi_bid(), .s_axi_bresp(e_bresp), .s_axi_bvalid(e_bvalid), .s_axi_bready(e_bready),
         .m_axi_aclk(cpu_clk), .m_axi_aresetn(cpu_rst_n),
-        .m_axi_awid(), .m_axi_awaddr(dma_awaddr), .m_axi_awlen(dma_awlen), .m_axi_awsize(dma_awsize), .m_axi_awburst(dma_awburst),
+        .m_axi_awid(), .m_axi_awaddr(ew_awaddr), .m_axi_awlen(ew_awlen), .m_axi_awsize(ew_awsize), .m_axi_awburst(ew_awburst),
         .m_axi_awlock(), .m_axi_awcache(), .m_axi_awprot(), .m_axi_awregion(), .m_axi_awqos(),
-        .m_axi_awvalid(dma_awvalid), .m_axi_awready(dma_awready),
-        .m_axi_wdata(dma_wdata), .m_axi_wstrb(dma_wstrb), .m_axi_wlast(dma_wlast), .m_axi_wvalid(dma_wvalid), .m_axi_wready(dma_wready),
-        .m_axi_bid(dma_bid), .m_axi_bresp(dma_bresp), .m_axi_bvalid(dma_bvalid), .m_axi_bready(dma_bready));
+        .m_axi_awvalid(ew_awvalid), .m_axi_awready(ew_awready),
+        .m_axi_wdata(ew_wdata), .m_axi_wstrb(ew_wstrb), .m_axi_wlast(ew_wlast), .m_axi_wvalid(ew_wvalid), .m_axi_wready(ew_wready),
+        .m_axi_bid(ew_bid), .m_axi_bresp(ew_bresp), .m_axi_bvalid(ew_bvalid), .m_axi_bready(ew_bready));
 `else
     assign e_awready = 1'b0;
     assign e_wready = 1'b0;
@@ -593,6 +615,13 @@ ddr4_0 u_ddr4 (
     OBUFDS u_hdmi_obuf_g (.I(hdmi_ser[1]), .O(hdmi_d_p[1]), .OB(hdmi_d_n[1]));
     OBUFDS u_hdmi_obuf_b (.I(hdmi_ser[0]), .O(hdmi_d_p[0]), .OB(hdmi_d_n[0]));
 `ifdef WITH_DMA
+    wire        hr_arvalid, hr_arready, hr_rvalid, hr_rready, hr_rlast;
+    wire [31:0] hr_araddr;
+    wire [7:0]  hr_arlen;
+    wire [2:0]  hr_arsize;
+    wire [1:0]  hr_arburst, hr_rresp;
+    wire [63:0] hr_rdata;
+    wire [3:0]  hr_rid;
     cc_dmar u_cc_dmar (
         .s_axi_aclk(per_clk), .s_axi_aresetn(per_rst_n),
         .s_axi_arid(4'd0), .s_axi_araddr(h_araddr), .s_axi_arlen(h_arlen), .s_axi_arsize(3'd3), .s_axi_arburst(2'd1),
@@ -600,14 +629,136 @@ ddr4_0 u_ddr4 (
         .s_axi_arvalid(h_arvalid), .s_axi_arready(h_arready),
         .s_axi_rid(), .s_axi_rdata(h_rdata), .s_axi_rresp(h_rresp), .s_axi_rlast(), .s_axi_rvalid(h_rvalid), .s_axi_rready(h_rready),
         .m_axi_aclk(cpu_clk), .m_axi_aresetn(cpu_rst_n),
-        .m_axi_arid(), .m_axi_araddr(dma_araddr), .m_axi_arlen(dma_arlen), .m_axi_arsize(dma_arsize), .m_axi_arburst(dma_arburst),
+        .m_axi_arid(), .m_axi_araddr(hr_araddr), .m_axi_arlen(hr_arlen), .m_axi_arsize(hr_arsize), .m_axi_arburst(hr_arburst),
         .m_axi_arlock(), .m_axi_arcache(), .m_axi_arprot(), .m_axi_arregion(), .m_axi_arqos(),
-        .m_axi_arvalid(dma_arvalid), .m_axi_arready(dma_arready),
-        .m_axi_rid(dma_rid), .m_axi_rdata(dma_rdata), .m_axi_rresp(dma_rresp), .m_axi_rlast(dma_rlast), .m_axi_rvalid(dma_rvalid), .m_axi_rready(dma_rready));
+        .m_axi_arvalid(hr_arvalid), .m_axi_arready(hr_arready),
+        .m_axi_rid(hr_rid), .m_axi_rdata(hr_rdata), .m_axi_rresp(hr_rresp), .m_axi_rlast(hr_rlast), .m_axi_rvalid(hr_rvalid), .m_axi_rready(hr_rready));
+`ifdef WITH_PCIE
+    // ---------------------------------------------------------------- shared hub DMA port: eth_dma (writes), HDMI (reads), PCIe (reads and writes)
+    // The crossbar takes 2-bit ids and returns 4-bit ids (the hub's id width); the two single-direction masters use id 0.
+    wire [3:0]  pm_awid, pm_arid;
+    wire [31:0] pm_awaddr, pm_araddr;
+    wire [7:0]  pm_awlen, pm_arlen, pm_wstrb;
+    wire [2:0]  pm_awsize, pm_arsize;
+    wire [1:0]  pm_awburst, pm_arburst, pm_bresp, pm_rresp;
+    wire [63:0] pm_wdata, pm_rdata;
+    wire        pm_awvalid, pm_awready, pm_wlast, pm_wvalid, pm_wready, pm_bvalid, pm_bready, pm_arvalid, pm_arready, pm_rlast, pm_rvalid, pm_rready;
+    wire [3:0]  pm_bid, pm_rid;
+    wire [2:0]  xd_awready, xd_wready, xd_bvalid, xd_arready, xd_rvalid, xd_rlast;
+    wire [5:0]  xd_bresp, xd_rresp;
+    wire [191:0] xd_rdata;
+    wire [5:0]  xd_bid, xd_rid;
+    xbar_dma u_xbar_dma (
+        .aclk(cpu_clk), .aresetn(cpu_rst_n),
+        .s_axi_awid({pm_awid[1:0], 2'd0, 2'd0}), .s_axi_awaddr({pm_awaddr, 32'd0, ew_awaddr}), .s_axi_awlen({pm_awlen, 8'd0, ew_awlen}),
+        .s_axi_awsize({pm_awsize, 3'd0, ew_awsize}), .s_axi_awburst({pm_awburst, 2'd0, ew_awburst}), .s_axi_awlock(3'd0),
+        .s_axi_awcache(12'd0), .s_axi_awprot(9'd0), .s_axi_awqos(12'd0),
+        .s_axi_awvalid({pm_awvalid, 1'b0, ew_awvalid}), .s_axi_awready(xd_awready),
+        .s_axi_wdata({pm_wdata, 64'd0, ew_wdata}), .s_axi_wstrb({pm_wstrb, 8'd0, ew_wstrb}), .s_axi_wlast({pm_wlast, 1'b0, ew_wlast}),
+        .s_axi_wvalid({pm_wvalid, 1'b0, ew_wvalid}), .s_axi_wready(xd_wready),
+        .s_axi_bid(xd_bid), .s_axi_bresp(xd_bresp), .s_axi_bvalid(xd_bvalid), .s_axi_bready({pm_bready, 1'b1, ew_bready}),
+        .s_axi_arid({pm_arid[1:0], 2'd0, 2'd0}), .s_axi_araddr({pm_araddr, hr_araddr, 32'd0}), .s_axi_arlen({pm_arlen, hr_arlen, 8'd0}),
+        .s_axi_arsize({pm_arsize, hr_arsize, 3'd0}), .s_axi_arburst({pm_arburst, hr_arburst, 2'd0}), .s_axi_arlock(3'd0),
+        .s_axi_arcache(12'd0), .s_axi_arprot(9'd0), .s_axi_arqos(12'd0),
+        .s_axi_arvalid({pm_arvalid, hr_arvalid, 1'b0}), .s_axi_arready(xd_arready),
+        .s_axi_rid(xd_rid), .s_axi_rdata(xd_rdata), .s_axi_rresp(xd_rresp), .s_axi_rlast(xd_rlast), .s_axi_rvalid(xd_rvalid),
+        .s_axi_rready({pm_rready, hr_rready, 1'b1}),
+        .m_axi_awid(dma_awid), .m_axi_awaddr(dma_awaddr), .m_axi_awlen(dma_awlen), .m_axi_awsize(dma_awsize), .m_axi_awburst(dma_awburst),
+        .m_axi_awlock(), .m_axi_awcache(), .m_axi_awprot(), .m_axi_awqos(), .m_axi_awvalid(dma_awvalid), .m_axi_awready(dma_awready),
+        .m_axi_wdata(dma_wdata), .m_axi_wstrb(dma_wstrb), .m_axi_wlast(dma_wlast), .m_axi_wvalid(dma_wvalid), .m_axi_wready(dma_wready),
+        .m_axi_bid(dma_bid), .m_axi_bresp(dma_bresp), .m_axi_bvalid(dma_bvalid), .m_axi_bready(dma_bready),
+        .m_axi_arid(dma_arid), .m_axi_araddr(dma_araddr), .m_axi_arlen(dma_arlen), .m_axi_arsize(dma_arsize), .m_axi_arburst(dma_arburst),
+        .m_axi_arlock(), .m_axi_arcache(), .m_axi_arprot(), .m_axi_arqos(), .m_axi_arvalid(dma_arvalid), .m_axi_arready(dma_arready),
+        .m_axi_rid(dma_rid), .m_axi_rdata(dma_rdata), .m_axi_rresp(dma_rresp), .m_axi_rlast(dma_rlast), .m_axi_rvalid(dma_rvalid),
+        .m_axi_rready(dma_rready));
+    assign ew_awready = xd_awready[0];
+    assign ew_wready = xd_wready[0];
+    assign ew_bvalid = xd_bvalid[0];
+    assign ew_bresp = xd_bresp[1:0];
+    assign ew_bid = {2'd0, xd_bid[1:0]};
+    assign hr_arready = xd_arready[1];
+    assign hr_rvalid = xd_rvalid[1];
+    assign hr_rdata = xd_rdata[127:64];
+    assign hr_rresp = xd_rresp[3:2];
+    assign hr_rlast = xd_rlast[1];
+    assign hr_rid = {2'd0, xd_rid[3:2]};
+    assign pm_awready = xd_awready[2];
+    assign pm_wready = xd_wready[2];
+    assign pm_bvalid = xd_bvalid[2];
+    assign pm_bresp = xd_bresp[5:4];
+    assign pm_bid = {2'd0, xd_bid[5:4]};
+    assign pm_arready = xd_arready[2];
+    assign pm_rvalid = xd_rvalid[2];
+    assign pm_rdata = xd_rdata[191:128];
+    assign pm_rresp = xd_rresp[5:4];
+    assign pm_rlast = xd_rlast[2];
+    assign pm_rid = {2'd0, xd_rid[5:4]};
+
+    pcie_ep u_pcie (
+        .sys_clk_p(pcie_refclk_p), .sys_clk_n(pcie_refclk_n), .sys_rst_n(pcie_perst_n),
+        .pci_exp_txp(pcie_txp), .pci_exp_txn(pcie_txn), .pci_exp_rxp(pcie_rxp), .pci_exp_rxn(pcie_rxn),
+        .clk(cpu_clk), .rst_n(cpu_rst_n), .per_clk(per_clk), .per_rst_n(per_rst_n),
+        .m_awid(pm_awid), .m_awaddr(pm_awaddr), .m_awlen(pm_awlen), .m_awsize(pm_awsize), .m_awburst(pm_awburst), .m_awvalid(pm_awvalid),
+        .m_awready(pm_awready), .m_wdata(pm_wdata), .m_wstrb(pm_wstrb), .m_wlast(pm_wlast), .m_wvalid(pm_wvalid), .m_wready(pm_wready),
+        .m_bid(pm_bid), .m_bresp(pm_bresp), .m_bvalid(pm_bvalid), .m_bready(pm_bready),
+        .m_arid(pm_arid), .m_araddr(pm_araddr), .m_arlen(pm_arlen), .m_arsize(pm_arsize), .m_arburst(pm_arburst), .m_arvalid(pm_arvalid),
+        .m_arready(pm_arready), .m_rid(pm_rid), .m_rdata(pm_rdata), .m_rresp(pm_rresp), .m_rlast(pm_rlast), .m_rvalid(pm_rvalid),
+        .m_rready(pm_rready),
+        .c_awaddr(x_awaddr[390:384]), .c_awvalid(x_awvalid[12]), .c_awready(x_awready[12]),
+        .c_wdata(x_wdata[415:384]), .c_wstrb(x_wstrb[51:48]), .c_wvalid(x_wvalid[12]), .c_wready(x_wready[12]),
+        .c_bresp(x_bresp[25:24]), .c_bvalid(x_bvalid[12]), .c_bready(x_bready[12]),
+        .c_araddr(x_araddr[390:384]), .c_arvalid(x_arvalid[12]), .c_arready(x_arready[12]),
+        .c_rdata(x_rdata[415:384]), .c_rresp(x_rresp[25:24]), .c_rvalid(x_rvalid[12]), .c_rready(x_rready[12]),
+        .irq(pcie_irq));
+`else
+    // without PCIe: the two masters go straight to the hub port
+    assign dma_awid = 4'd0;
+    assign dma_arid = 4'd0;
+    assign dma_awvalid = ew_awvalid;
+    assign dma_awaddr = ew_awaddr;
+    assign dma_awlen = ew_awlen;
+    assign dma_awsize = ew_awsize;
+    assign dma_awburst = ew_awburst;
+    assign ew_awready = dma_awready;
+    assign dma_wvalid = ew_wvalid;
+    assign dma_wdata = ew_wdata;
+    assign dma_wstrb = ew_wstrb;
+    assign dma_wlast = ew_wlast;
+    assign ew_wready = dma_wready;
+    assign ew_bvalid = dma_bvalid;
+    assign ew_bresp = dma_bresp;
+    assign ew_bid = dma_bid;
+    assign dma_bready = ew_bready;
+    assign dma_arvalid = hr_arvalid;
+    assign dma_araddr = hr_araddr;
+    assign dma_arlen = hr_arlen;
+    assign dma_arsize = hr_arsize;
+    assign dma_arburst = hr_arburst;
+    assign hr_arready = dma_arready;
+    assign hr_rvalid = dma_rvalid;
+    assign hr_rdata = dma_rdata;
+    assign hr_rresp = dma_rresp;
+    assign hr_rlast = dma_rlast;
+    assign hr_rid = dma_rid;
+    assign dma_rready = hr_rready;
+`endif
 `else
     assign h_arready = 1'b0;
     assign h_rvalid = 1'b0;
     assign h_rdata = 64'd0;
     assign h_rresp = 2'b00;
+`endif
+
+`ifndef WITH_PCIE
+    // PCIe register slot (crossbar slave 12) without the endpoint: reads return 0, writes are ignored
+    assign pcie_irq = 1'b0;
+    axil_simple #(.AW(7)) u_nopcie (
+        .clk(per_clk), .rst_n(per_rst_n),
+        .s_awaddr(x_awaddr[390:384]), .s_awvalid(x_awvalid[12]), .s_awready(x_awready[12]),
+        .s_wdata(x_wdata[415:384]), .s_wstrb(x_wstrb[51:48]), .s_wvalid(x_wvalid[12]), .s_wready(x_wready[12]),
+        .s_bresp(x_bresp[25:24]), .s_bvalid(x_bvalid[12]), .s_bready(x_bready[12]),
+        .s_araddr(x_araddr[390:384]), .s_arvalid(x_arvalid[12]), .s_arready(x_arready[12]),
+        .s_rdata(x_rdata[415:384]), .s_rresp(x_rresp[25:24]), .s_rvalid(x_rvalid[12]), .s_rready(x_rready[12]),
+        .addr(), .we(), .wdata(), .wstrb(), .re(), .rdata(32'd0));
 `endif
 endmodule

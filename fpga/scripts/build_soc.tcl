@@ -5,6 +5,7 @@
 # tck_ps: DDR4 clock period; the CPU runs on the controller user clock (tck/4): 750 -> 333.33 MHz (DDR4-2667), 1250 -> 200 MHz.
 # Optional: -ddr8g builds the controller for 8 Gb x16 chips (MT40A512M16HA-075E, 2 GiB) and defines DDR_8G: the DDR4 capacity test (DDRHALF register).
 # A name containing "dma" or "l2" also defines WITH_DMA in soc_top.v.
+# Optional: -pcie adds the PCIe endpoint (XDMA core, window filter, registers at 0xF800A000; needs WITH_DMA) and the shared hub DMA port crossbar.
 set root [file normalize [file join [file dirname [info script]] .. ..]]
 set outdir [file normalize [lindex $argv 0]]
 set soc [lindex $argv 1]
@@ -17,6 +18,7 @@ set part xcku5p-ffvb676-2-i
 set strategy ""
 set ddr_part MT40A256M16GE-075E
 set ddr8g [expr {[lsearch $argv "-ddr8g"] >= 0}]
+set pcie [expr {[lsearch $argv "-pcie"] >= 0}]
 if {$ddr8g} { set ddr_part MT40A512M16HA-075E }
 set i [lsearch $argv "-strategy"]
 if {$i >= 0} { set strategy [lindex $argv [expr {$i + 1}]] }
@@ -41,12 +43,12 @@ create_ip -name axi_clock_converter -vendor xilinx.com -library ip -module_name 
 set_property -dict [list CONFIG.PROTOCOL AXI4 CONFIG.DATA_WIDTH 64 CONFIG.ADDR_WIDTH 32 CONFIG.ID_WIDTH 4 CONFIG.ACLK_ASYNC 1 \
     CONFIG.READ_WRITE_MODE READ_ONLY] [get_ips cc_dmar]
 create_ip -name axi_crossbar -vendor xilinx.com -library ip -module_name xbar_per
-set_property -dict [list CONFIG.PROTOCOL AXI4LITE CONFIG.NUM_SI 2 CONFIG.NUM_MI 12 CONFIG.ADDR_RANGES 2 CONFIG.ADDR_WIDTH 32 CONFIG.DATA_WIDTH 32 \
+set_property -dict [list CONFIG.PROTOCOL AXI4LITE CONFIG.NUM_SI 2 CONFIG.NUM_MI 13 CONFIG.ADDR_RANGES 2 CONFIG.ADDR_WIDTH 32 CONFIG.DATA_WIDTH 32 \
     CONFIG.M00_A00_BASE_ADDR 0x00000000F8000000 CONFIG.M00_A00_ADDR_WIDTH 12 \
     CONFIG.M01_A00_BASE_ADDR 0x00000000F8001000 CONFIG.M01_A00_ADDR_WIDTH 12 \
     CONFIG.M02_A00_BASE_ADDR 0x0000000010000000 CONFIG.M02_A00_ADDR_WIDTH 16 \
     CONFIG.M03_A00_BASE_ADDR 0x00000000F8002000 CONFIG.M03_A00_ADDR_WIDTH 12 \
-    CONFIG.M04_A00_BASE_ADDR 0x00000000F8008000 CONFIG.M04_A00_ADDR_WIDTH 14 \
+    CONFIG.M04_A00_BASE_ADDR 0x00000000F8008000 CONFIG.M04_A00_ADDR_WIDTH 13 \
     CONFIG.M04_A01_BASE_ADDR 0x00000000F800C000 CONFIG.M04_A01_ADDR_WIDTH 13 \
     CONFIG.M05_A00_BASE_ADDR 0x00000000F8003000 CONFIG.M05_A00_ADDR_WIDTH 12 \
     CONFIG.M06_A00_BASE_ADDR 0x00000000F8004000 CONFIG.M06_A00_ADDR_WIDTH 12 \
@@ -54,7 +56,8 @@ set_property -dict [list CONFIG.PROTOCOL AXI4LITE CONFIG.NUM_SI 2 CONFIG.NUM_MI 
     CONFIG.M08_A00_BASE_ADDR 0x00000000F8006000 CONFIG.M08_A00_ADDR_WIDTH 12 \
     CONFIG.M09_A00_BASE_ADDR 0x00000000F8007000 CONFIG.M09_A00_ADDR_WIDTH 12 \
     CONFIG.M10_A00_BASE_ADDR 0x00000000F800E000 CONFIG.M10_A00_ADDR_WIDTH 12 \
-    CONFIG.M11_A00_BASE_ADDR 0x00000000F800F000 CONFIG.M11_A00_ADDR_WIDTH 12] [get_ips xbar_per]
+    CONFIG.M11_A00_BASE_ADDR 0x00000000F800F000 CONFIG.M11_A00_ADDR_WIDTH 12 \
+    CONFIG.M12_A00_BASE_ADDR 0x00000000F800A000 CONFIG.M12_A00_ADDR_WIDTH 12] [get_ips xbar_per]
 create_ip -name axi_uartlite -vendor xilinx.com -library ip -module_name uart_0
 set_property -dict [list CONFIG.C_BAUDRATE 230400 CONFIG.C_S_AXI_ACLK_FREQ_HZ 100000000] [get_ips uart_0]
 # AXI GPIO (DS18B20 1-Wire, buzzer, fan tach) and AXI Timer (fan PWM): both have upstream Linux drivers (gpio-xilinx, pwm-xilinx).
@@ -64,6 +67,17 @@ set_property -dict [list CONFIG.C_GPIO_WIDTH 19 CONFIG.C_ALL_INPUTS 0 CONFIG.C_A
 create_ip -name axi_timer -vendor xilinx.com -library ip -module_name tmr_0
 create_ip -name axi_iic -vendor xilinx.com -library ip -module_name iic_0
 set_property -dict [list CONFIG.AXI_ACLK_FREQ_MHZ 100 CONFIG.IIC_FREQ_KHZ 100] [get_ips iic_0]
+if {$pcie} {
+    if {!([string match "*dma*" $soc] || [string match "*l2*" $soc])} { error "-pcie needs a SoC netlist with the DMA port (name containing dma or l2)" }
+    source $root/fpga/scripts/pcie/xdma_ip.tcl
+    file mkdir [file join $outdir soc.srcs sources_1 ip]
+    make_xdma xdma_0 [file join $outdir soc.srcs sources_1 ip] 0
+    make_pcie_converters
+    # shared hub DMA port: SI0 eth_dma (writes), SI1 HDMI (reads), SI2 PCIe; one 64-bit slave covering the whole address space
+    create_ip -name axi_crossbar -vendor xilinx.com -library ip -module_name xbar_dma
+    set_property -dict [list CONFIG.PROTOCOL AXI4 CONFIG.NUM_SI 3 CONFIG.NUM_MI 1 CONFIG.ADDR_WIDTH 32 CONFIG.DATA_WIDTH 64 CONFIG.ID_WIDTH 2 \
+        CONFIG.M00_A00_BASE_ADDR 0x0000000000000000 CONFIG.M00_A00_ADDR_WIDTH 32] [get_ips xbar_dma]
+}
 generate_target all [get_ips]
 
 set liteeth $root/build/liteeth/gateware/liteeth_core.v
@@ -73,7 +87,12 @@ add_files [list $root/fpga/rtl/soc_top.v $root/fpga/rtl/axil_simple.v $root/fpga
     $liteeth]
 add_files -fileset constrs_1 [list $root/fpga/constraints/ddr4_pins.xdc $root/fpga/constraints/bringup_board.xdc \
     $root/fpga/constraints/soc_board.xdc]
+if {$pcie} {
+    add_files [list $root/fpga/rtl/pcie_ep.v $root/fpga/rtl/pcie_regs.v $root/fpga/rtl/axi_win.v $root/fpga/rtl/cdc_cfg.v]
+    add_files -fileset constrs_1 $root/fpga/constraints/pcie.xdc
+}
 set defs [list SOC_MODULE=$soc]
+if {$pcie} { lappend defs WITH_PCIE }
 if {[string match "*dma*" $soc] || [string match "*l2*" $soc]} { lappend defs WITH_DMA }
 if {$ddr8g} { lappend defs DDR_8G }
 set_property verilog_define $defs [get_filesets sources_1]
