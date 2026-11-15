@@ -30,3 +30,5 @@ truncate -s "${DATA_MIB:-256}M" "$b/data.ext4"
 mke2fs -q -t ext4 -L data -E root_owner=0:0 "$b/data.ext4"
 python3 "$here/tools/mkcard.py" "$b/sdcard.img" --fw "$b/opensbi_sd/platform/generic/firmware/fw_jump.bin" \
 	--kernel "$b/kernel_sd/arch/riscv/boot/Image" --dtb "$b/hg-xcku5p-sdroot.dtb" --rootfs "$b/rootfs_ro.ext4" --data "$b/data.ext4"
+# The boot area (everything before the root partition at 16 MiB) alone updates the kernel, device tree and firmware without touching the root or data partitions.
+head -c 16M "$b/sdcard.img" >"$b/boot_area.img"
