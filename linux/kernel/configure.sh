@@ -20,6 +20,7 @@ make ARCH=riscv CROSS_COMPILE="$cross" O="$out" olddefconfig >/dev/null
 [ "${KDEBUG:-0}" = 1 ] && ./scripts/config --file "$out/.config" -e DYNAMIC_DEBUG -e DEBUG_FS
 [ "${KNFS:-0}" = 1 ] && ./scripts/config --file "$out/.config" -e NFS_FS -e NFS_V3 -e ROOT_NFS -e IP_PNP -e IP_PNP_DHCP
 [ "${KHDMI:-0}" = 1 ] && ./scripts/config --file "$out/.config" -e VT -e VT_CONSOLE -e FB -e FB_SIMPLE -e FRAMEBUFFER_CONSOLE -e FONTS -e FONT_8x16 -e LOGO -e LOGO_LINUX_CLUT224
+[ "${KVPCIE:-0}" = 1 ] && ./scripts/config --file "$out/.config" -e PCI -e PCI_HOST_GENERIC -e UIO -e UIO_PCI_GENERIC
 [ "${KPROFILE:-0}" = 1 ] && ./scripts/config --file "$out/.config" -e PROFILING
 make ARCH=riscv CROSS_COMPILE="$cross" O="$out" olddefconfig >/dev/null
 if grep -q '^CONFIG_RISCV_ISA_C=y' "$out/.config"; then echo "RISCV_ISA_C still enabled" >&2; exit 1; fi

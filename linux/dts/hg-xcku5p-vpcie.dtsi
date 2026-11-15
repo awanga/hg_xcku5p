@@ -1,0 +1,23 @@
+// SPDX-License-Identifier: MIT
+/*
+ * Logical PCIe root complex (fpga/rtl/vpcie.v, decision 0008): a generic ECAM host bridge for the CPU's own PCIe device. The 2 MiB peripheral window at
+ * 0xF9000000 holds the ECAM of bus 0 (1 MiB) and the BAR memory window (1 MiB at 0xF9100000, PCI addresses equal CPU addresses). The one device
+ * (00:00.0, 10ee:9034) raises INTA on PLIC source 10. Needs a kernel built with KVPCIE=1 and the -vpcie bitstream: without that window the ECAM
+ * accesses would fault.
+ */
+/ {
+	soc {
+		pcie0: pcie@f9000000 {
+			compatible = "pci-host-ecam-generic";
+			device_type = "pci";
+			reg = <0xf9000000 0x100000>;
+			bus-range = <0x0 0x0>;
+			#address-cells = <3>;
+			#size-cells = <2>;
+			#interrupt-cells = <1>;
+			ranges = <0x02000000 0x0 0xf9100000 0xf9100000 0x0 0x100000>;
+			interrupt-map-mask = <0 0 0 7>;
+			interrupt-map = <0 0 0 1 &plic 10>;
+		};
+	};
+};
