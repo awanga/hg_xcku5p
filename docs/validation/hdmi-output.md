@@ -18,3 +18,8 @@ Mode 1024x768@60 (65 MHz pixel clock, 325 MHz 5x clock from a second MMCM), RGB5
 - No EDID (DDC not wired to the FPGA): the mode is fixed. Other monitors may reject 1024x768@60; one monitor was tested.
 - Monitor +5 V backfeeds the board when the board is off and a live monitor is connected (owner observation: some LEDs light). The HDMI connector 5 V line comes from the TPS2051 switch, so this is a board-level behaviour; do not mistake it for the board being on (JTAG then reports "TDO is stuck at 0").
 - Colour accuracy, tearing and long-run stability are not measured. Audio is not supported (DVI only).
+
+## Flash and boot (2026-11-15)
+- SD image with `S03hdmi` (KHDMI=1, `hg-xcku5p-sdroot-hdmi`): after a JTAG load of `vv_hdmi2` the init script alone set FB_BASE=0x7FE00000 and CTRL=3; FRAMES counting, LATE 0.
+- `vv_hdmi2` written to the config flash (`flash_bit.tcl` from `soc_top_routed.dcp`, 8.6 MB; `openFPGALoader -f --verify --unprotect-flash`, owner-approved). A flash reconfiguration then booted Linux from SD with the HDMI registers present (MODE 0x04000300, CTRL 3, FRAMES counting, LATE 0); `tools/smoke.py --reset flash --sd`: all 17 checks pass (this build has no Ethernet check without `--net`).
+- The previous flash content (`vv_dma3`, WNS +0.001) is not in the flash any more; rebuild from `build/soc/vv_dma3` if needed.
