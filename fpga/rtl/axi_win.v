@@ -79,16 +79,61 @@ module axi_win #(
     input  wire            m_rvalid,
     output reg             m_rready
 );
-    // 33-bit arithmetic: neither the offset nor the burst length can overflow it (a burst is at most 256 x 128 bytes)
-    wire [32:0] w_last = ({1'b0, s_awaddr} - {1'b0, win_base}) + ({25'd0, s_awlen} + 33'd1) * (33'd1 << s_awsize) - 33'd1;
-    wire [32:0] r_last = ({1'b0, s_araddr} - {1'b0, win_base}) + ({25'd0, s_arlen} + 33'd1) * (33'd1 << s_arsize) - 33'd1;
-    wire w_ok = !s_awhi && (s_awaddr >= win_base) && ({1'b0, win_size} > w_last);
-    wire r_ok = !s_arhi && (s_araddr >= win_base) && ({1'b0, win_size} > r_last);
+    // The window check is pipelined over three cycles after an address is captured (offset and byte count, then the end offset, then the compare): the
+    // 33-bit arithmetic does not fit one 3 ns cycle. `*_stage` counts 0 (idle) .. 3 (result valid in *_ok). A burst's last byte must be inside the
+    // window: end = (addr - base) + bytes <= win_size, with addr >= base.
+    reg [32:0] w_off, r_off, w_end, r_end;
+    reg [15:0] w_bytes, r_bytes;
+    reg        w_ge, r_ge, w_hi, r_hi, w_ok, r_ok;
+    reg [1:0]  w_stage, r_stage;
 
     localparam [1:0] DECERR = 2'b11;
 
+
+    // check pipeline: restarts whenever the FSM is waiting in WC / RC (stage 0 while capturing); inputs come from the captured m_* address registers
+    always @(posedge clk) begin
+        if (wst == WC) begin
+            case (w_stage)
+                2'd0: begin
+                    w_off <= {1'b0, m_awaddr} - {1'b0, win_base};
+                    w_bytes <= ({8'd0, m_awlen} + 16'd1) << m_awsize;
+                    w_stage <= 2'd1;
+                end
+                2'd1: begin
+                    w_ge <= !w_off[32];
+                    w_end <= w_off + {17'd0, w_bytes};
+                    w_stage <= 2'd2;
+                end
+                2'd2: begin
+                    w_ok <= !w_hi && w_ge && ({1'b0, win_size} >= w_end);
+                    w_stage <= 2'd3;
+                end
+                default: ;
+            endcase
+        end else w_stage <= 2'd0;
+        if (rst == RC) begin
+            case (r_stage)
+                2'd0: begin
+                    r_off <= {1'b0, m_araddr} - {1'b0, win_base};
+                    r_bytes <= ({8'd0, m_arlen} + 16'd1) << m_arsize;
+                    r_stage <= 2'd1;
+                end
+                2'd1: begin
+                    r_ge <= !r_off[32];
+                    r_end <= r_off + {17'd0, r_bytes};
+                    r_stage <= 2'd2;
+                end
+                2'd2: begin
+                    r_ok <= !r_hi && r_ge && ({1'b0, win_size} >= r_end);
+                    r_stage <= 2'd3;
+                end
+                default: ;
+            endcase
+        end else r_stage <= 2'd0;
+    end
+
     // ---------------- write direction
-    localparam WI = 3'd0, WA = 3'd1, WD = 3'd2, WB = 3'd3, WX = 3'd4, WE = 3'd5;
+    localparam WI = 3'd0, WA = 3'd1, WD = 3'd2, WB = 3'd3, WX = 3'd4, WE = 3'd5, WC = 3'd6;
     reg [2:0] wst;
     reg [IDW-1:0] bid_q;
     always @(posedge clk) begin
@@ -107,11 +152,15 @@ module axi_win #(
                         m_awsize <= s_awsize;
                         m_awburst <= s_awburst;
                         bid_q <= s_awid;
-                        if (w_ok) begin
-                            m_awvalid <= 1'b1;
-                            wst <= WA;
-                        end else wst <= WX;
+                        w_hi <= s_awhi;
+                        wst <= WC;
                     end
+                end
+                WC: if (w_stage == 2'd3) begin
+                    if (w_ok) begin
+                        m_awvalid <= 1'b1;
+                        wst <= WA;
+                    end else wst <= WX;
                 end
                 WA: if (m_awvalid && m_awready) begin
                     m_awvalid <= 1'b0;
@@ -139,8 +188,8 @@ module axi_win #(
     end
 
     // ---------------- read direction
-    localparam RI = 2'd0, RA = 2'd1, RD = 2'd2, RE = 2'd3;
-    reg [1:0] rst;
+    localparam RI = 3'd0, RA = 3'd1, RD = 3'd2, RE = 3'd3, RC = 3'd4;
+    reg [2:0] rst;
     reg [7:0] rcnt;
     reg [IDW-1:0] eid;
     reg [7:0] elen;
@@ -162,11 +211,15 @@ module axi_win #(
                         eid <= s_arid;
                         elen <= s_arlen;
                         rcnt <= 8'd0;
-                        if (r_ok) begin
-                            m_arvalid <= 1'b1;
-                            rst <= RA;
-                        end else rst <= RE;
+                        r_hi <= s_arhi;
+                        rst <= RC;
                     end
+                end
+                RC: if (r_stage == 2'd3) begin
+                    if (r_ok) begin
+                        m_arvalid <= 1'b1;
+                        rst <= RA;
+                    end else rst <= RE;
                 end
                 RA: if (m_arvalid && m_arready) begin
                     m_arvalid <= 1'b0;

@@ -397,10 +397,12 @@ mut_aw() { # name sed-expression
 	cmp -s "$aw" "$b/mut_$1.v" && { echo "FAIL mutant $1 unchanged"; fail=1; }
 	run_aw "mut_$1" "$b/mut_$1.v" 1 FAIL
 }
-mut_aw aw_end "s/({1'b0, win_size} > w_last)/({1'b0, win_size} >= w_last)/"
-mut_aw aw_rend "s/({1'b0, win_size} > r_last)/({1'b0, win_size} > ({1'b0, s_araddr} - {1'b0, win_base}))/"
-mut_aw aw_hi "s/wire w_ok = !s_awhi \&\& /wire w_ok = /"
-mut_aw aw_lo "s/(s_awaddr >= win_base) \&\& /1'b1 \&\& /"
+mut_aw aw_end "s/({1'b0, win_size} >= w_end)/({1'b0, win_size} + 33'd1 >= w_end)/"
+mut_aw aw_exact "s/({1'b0, win_size} >= w_end)/({1'b0, win_size} > w_end)/"
+mut_aw aw_rend "s/({1'b0, win_size} >= r_end)/({1'b0, win_size} + 33'd1 >= r_end)/"
+mut_aw aw_hi "s/w_ok <= !w_hi \&\& /w_ok <= /"
+mut_aw aw_lo "s/w_ok <= !w_hi \&\& w_ge \&\& /w_ok <= !w_hi \&\& /"
+mut_aw aw_rlo "s/r_ok <= !r_hi \&\& r_ge \&\& /r_ok <= !r_hi \&\& /"
 mut_aw aw_decerr "s/localparam \[1:0\] DECERR = 2'b11;/localparam [1:0] DECERR = 2'b10;/"
 mut_aw aw_rlast "s/s_rlast = (rcnt == elen);/s_rlast = (rcnt == elen + 8'd1);/"
 mut_aw aw_rid "s/s_rid = eid;/s_rid = 4'd0;/"
