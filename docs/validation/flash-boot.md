@@ -30,3 +30,7 @@ After the owner adopted the coherent SoC with a 128 KiB L2 (docs/decisions/0006-
 Check: after loading the older vv_fan2 by JTAG, `openFPGALoader -r` brought up a design in which the DDRHALF register (0xF8001024, present only in the d8g1/L2 builds) reads back 1.
 Cold power-up (owner power cycle, no JTAG load): booted, uptime under a minute, DDRHALF reads back 1 and the die-temperature register reads 0x00009F73.
 
+
+## 2026-11-15: v0.3.0 (PCIe endpoint build)
+
+`vv_pcie3f.dcp` through `flash_bit.tcl` (9.9 MB, compressed), erase + write + `--verify` passed (`openFPGALoader -r` then reconfigured from flash); `tools/smoke.py --reset flash --pcie --net` passed all 23 checks (log `build/smoke/20261115-175213.log`). The flash now holds the PCIe build.
