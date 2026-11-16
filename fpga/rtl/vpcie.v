@@ -2,11 +2,12 @@
 // Logical PCIe device for the CPU-as-root-complex variant (decision 0008, stage 1). It stands in for the PCIe hard block as the Linux generic ECAM host
 // bridge sees it: a 2 MiB AXI4-Lite slave window at BASE, the lower 1 MiB being the ECAM of bus 0 and the upper 1 MiB the BAR (memory) window.
 //   ECAM  addr[19:12] = device/function, addr[11:2] = dword. Only 00:00.0 exists; every other function reads all-ones and drops writes (a PCI master abort).
-//   00:00.0 type 0 header: 10EE:9034 (the XDMA IDs), class 05 80 00, subsystem 10EE:0007, BAR0 = 64 KiB memory (bits 31:16 settable, read-back
-//           mask FFFF0000 for sizing), command = memory enable (bit1), bus master (bit2), INTx disable (bit10); status bit3 = INTx pending;
-//           cache line size and interrupt line are plain read/write bytes; interrupt pin = INTA; no capability list, BAR1-5 and the ROM read 0.
-//   BAR0 accesses are forwarded as AXI4-Lite transactions (offset addr[6:0]) to the register block the firmware under test serves (pcie_regs h_* port),
-//   only while memory enable is set and BAR0 equals the accessed address; any other BAR-window access is a master abort (reads all-ones, writes dropped).
+//   00:00.0 type 0 header: 10EE:9034 (the XDMA IDs), class 05 80 00, subsystem 10EE:0007, BAR0 and BAR1 = 64 KiB memory each (bits 31:16 settable,
+//           read-back mask FFFF0000 for sizing), command = memory enable (bit1), bus master (bit2), INTx disable (bit10); status bit3 = INTx pending;
+//           cache line size and interrupt line are plain read/write bytes; interrupt pin = INTA; no capability list, BAR2-5 and the ROM read 0.
+//   BAR accesses are forwarded as AXI4-Lite transactions (offset addr[15:0]) on one master port, `m_awsel`/`m_arsel` telling which BAR (0: the register
+//   block the firmware under test serves, 1: the XDMA-compatible DMA registers), only while memory enable is set and the BAR equals the accessed address (BAR0
+//   wins if both match); any other BAR-window access is a master abort (reads all-ones, writes dropped).
 // Every response is OKAY. One write and one read can be in flight (separate state machines); each completes before the next of its kind is accepted.
 // `intx_pending` is the device's interrupt condition (a level); `intx` = pending and INTx not disabled in the command register.
 module vpcie #(
@@ -33,7 +34,8 @@ module vpcie #(
     output wire        s_rvalid,
     input  wire        s_rready,
     // BAR0 target (pcie_regs host window)
-    output wire [6:0]  m_awaddr,
+    output wire [15:0] m_awaddr,
+    output wire        m_awsel,
     output wire        m_awvalid,
     input  wire        m_awready,
     output wire [31:0] m_wdata,
@@ -43,7 +45,8 @@ module vpcie #(
     input  wire [1:0]  m_bresp,
     input  wire        m_bvalid,
     output wire        m_bready,
-    output wire [6:0]  m_araddr,
+    output wire [15:0] m_araddr,
+    output wire        m_arsel,
     output wire        m_arvalid,
     input  wire        m_arready,
     input  wire [31:0] m_rdata,
@@ -56,7 +59,7 @@ module vpcie #(
     // configuration registers
     reg        cmd_mem, cmd_bm, cmd_intxd;
     reg [7:0]  clsz, iline;
-    reg [15:0] bar0;
+    reg [15:0] bar0, bar1;
 
     assign intx = intx_pending & ~cmd_intxd;
 
@@ -66,7 +69,7 @@ module vpcie #(
     reg [20:0] wa;
     reg [31:0] wd;
     reg [3:0]  wb;
-    reg        maw, mw;
+    reg        maw, mw, wsel;
     // m_bresp and the read response codes are not forwarded: the host bridge sees OKAY for everything
     /* verilator lint_off UNUSEDSIGNAL */
     wire [1:0] unused_resp = m_bresp ^ m_rresp;
@@ -74,13 +77,16 @@ module vpcie #(
 
     wire w_cfg    = ~wa[20];
     wire w_cfg_f0 = w_cfg && (wa[19:12] == 8'd0);
-    wire w_hit    = wa[20] && cmd_mem && (bar0 == {BASE[31:21], wa[20:16]});
+    wire w_hit0   = wa[20] && cmd_mem && (bar0 == {BASE[31:21], wa[20:16]});
+    wire w_hit1   = wa[20] && cmd_mem && (bar1 == {BASE[31:21], wa[20:16]});
+    wire w_hit    = w_hit0 || w_hit1;
 
     assign s_awready = (ws == W_AW);
     assign s_wready  = (ws == W_W);
     assign s_bvalid  = (ws == W_B);
     assign s_bresp   = 2'b00;
-    assign m_awaddr  = wa[6:0];
+    assign m_awaddr  = wa[15:0];
+    assign m_awsel   = wsel;
     assign m_awvalid = maw;
     assign m_wdata   = wd;
     assign m_wstrb   = wb;
@@ -98,6 +104,7 @@ module vpcie #(
             clsz <= 8'd0;
             iline <= 8'd0;
             bar0 <= 16'd0;
+            bar1 <= 16'd0;
         end else begin
             case (ws)
             W_AW: if (s_awvalid) begin
@@ -125,12 +132,17 @@ module vpcie #(
                         if (wb[2]) bar0[7:0] <= wd[23:16];
                         if (wb[3]) bar0[15:8] <= wd[31:24];
                     end
+                    10'h05: begin
+                        if (wb[2]) bar1[7:0] <= wd[23:16];
+                        if (wb[3]) bar1[15:8] <= wd[31:24];
+                    end
                     10'h0F: if (wb[0]) iline <= wd[7:0];
                     default: ;
                     endcase
                 end else if (w_hit) begin
                     maw <= 1'b1;
                     mw <= 1'b1;
+                    wsel <= !w_hit0;
                     ws <= W_F;
                 end
             end
@@ -150,11 +162,13 @@ module vpcie #(
     reg [2:0]  rs;
     reg [20:0] ra;
     reg [31:0] rd;
-    reg        mar;
+    reg        mar, rsel;
 
     wire r_cfg    = ~ra[20];
     wire r_cfg_f0 = r_cfg && (ra[19:12] == 8'd0);
-    wire r_hit    = ra[20] && cmd_mem && (bar0 == {BASE[31:21], ra[20:16]});
+    wire r_hit0   = ra[20] && cmd_mem && (bar0 == {BASE[31:21], ra[20:16]});
+    wire r_hit1   = ra[20] && cmd_mem && (bar1 == {BASE[31:21], ra[20:16]});
+    wire r_hit    = r_hit0 || r_hit1;
 
     reg [31:0] cfg_q;
     always @* begin
@@ -164,6 +178,7 @@ module vpcie #(
         10'h02: cfg_q = 32'h05800000;
         10'h03: cfg_q = {24'd0, clsz};
         10'h04: cfg_q = {bar0, 16'd0};
+        10'h05: cfg_q = {bar1, 16'd0};
         10'h0B: cfg_q = 32'h000710EE;
         10'h0F: cfg_q = {16'd0, 8'h01, iline};
         default: cfg_q = 32'd0;
@@ -174,7 +189,8 @@ module vpcie #(
     assign s_rvalid  = (rs == R_R);
     assign s_rdata   = rd;
     assign s_rresp   = 2'b00;
-    assign m_araddr  = ra[6:0];
+    assign m_araddr  = ra[15:0];
+    assign m_arsel   = rsel;
     assign m_arvalid = mar;
     assign m_rready  = (rs == R_F) && !mar;
 
@@ -193,6 +209,7 @@ module vpcie #(
                 if (r_cfg) rd <= r_cfg_f0 ? cfg_q : 32'hFFFFFFFF;
                 else if (r_hit) begin
                     mar <= 1'b1;
+                    rsel <= !r_hit0;
                     rs <= R_F;
                 end else rd <= 32'hFFFFFFFF;
             end
