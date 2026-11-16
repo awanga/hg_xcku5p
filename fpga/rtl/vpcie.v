@@ -97,7 +97,6 @@ module vpcie #(
         if (!rst_n) begin
             ws <= W_AW;
             wsel <= 1'b0;
-            rsel <= 1'b0;
             maw <= 1'b0;
             mw <= 1'b0;
             cmd_mem <= 1'b0;
@@ -199,6 +198,7 @@ module vpcie #(
     always @(posedge clk) begin
         if (!rst_n) begin
             rs <= R_AR;
+            rsel <= 1'b0;
             mar <= 1'b0;
         end else begin
             case (rs)

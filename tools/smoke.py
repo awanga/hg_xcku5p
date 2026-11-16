@@ -186,11 +186,12 @@ VPCIE_CHECKS = [
         "vpcie_intx",
         "echo 10ee 9034 >/sys/bus/pci/drivers/uio_pci_generic/new_id 2>/dev/null; sleep 1; "
         "b=$(cut -d' ' -f1 /sys/bus/pci/devices/0000:00:00.0/resource | head -1); "
+        "e=$(sed -n 2p /sys/bus/pci/devices/0000:00:00.0/resource | cut -d' ' -f1); "
         "n() { awk '/uio_pci_generic/ {print $2}' /proc/interrupts; }; "
         "devmem $((b+0xC)) 32 0xFFFFFFFF; setpci -s 00:00.0 COMMAND=0002; a=$(n); "
-        "devmem $((b+0x2008)) 32 1; devmem 0xF800A00C 32 1; sleep 1; z=$(n); "
+        "devmem $((e+0x2008)) 32 1; devmem 0xF800A00C 32 1; sleep 1; z=$(n); "
         "echo delta=$((z-a)) status=$(setpci -s 00:00.0 STATUS); "
-        "devmem $((b+0xC)) 32 0xFFFFFFFF; devmem $((b+0x200C)) 32 1; setpci -s 00:00.0 COMMAND=0002",
+        "devmem $((b+0xC)) 32 0xFFFFFFFF; devmem $((e+0x200C)) 32 1; setpci -s 00:00.0 COMMAND=0002",
         r"^delta=1 status=0[0-9a-f]{2}8$",
         "a CPU doorbell raises INTx once the IRQ block user enable is set: one interrupt through the PLIC to uio_pci_generic and the status INTx bit",
     ),

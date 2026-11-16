@@ -111,6 +111,14 @@ def main():
     for sev in ("Error", "Critical Warning"):
         if rep["drc"].get(sev):
             problems.append("%d DRC %s" % (rep["drc"][sev], sev))
+    # Multi-driven nets are tolerated by simulators but Vivado ties them to a constant (stage 2 vpcie: rsel driven from two always blocks).
+    try:
+        slog = read(os.path.join(a.dir, "soc.runs", "synth_1", "runme.log"))
+    except OSError:
+        slog = ""
+    multi = len(re.findall(r"CRITICAL WARNING: \[Synth 8-685[89]\]", slog))
+    if multi:
+        problems.append("%d multi-driven net synthesis critical warnings" % multi)
     rep["problems"] = problems
     with open(os.path.join(a.dir, "report.json"), "w") as f:
         json.dump(rep, f, indent=2)
