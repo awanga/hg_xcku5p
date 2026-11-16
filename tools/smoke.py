@@ -188,11 +188,66 @@ VPCIE_CHECKS = [
         "b=$(cut -d' ' -f1 /sys/bus/pci/devices/0000:00:00.0/resource | head -1); "
         "n() { awk '/uio_pci_generic/ {print $2}' /proc/interrupts; }; "
         "devmem $((b+0xC)) 32 0xFFFFFFFF; setpci -s 00:00.0 COMMAND=0002; a=$(n); "
-        "devmem 0xF800A00C 32 1; sleep 1; z=$(n); "
+        "devmem $((b+0x2008)) 32 1; devmem 0xF800A00C 32 1; sleep 1; z=$(n); "
         "echo delta=$((z-a)) status=$(setpci -s 00:00.0 STATUS); "
-        "devmem $((b+0xC)) 32 0xFFFFFFFF; setpci -s 00:00.0 COMMAND=0002",
+        "devmem $((b+0xC)) 32 0xFFFFFFFF; devmem $((b+0x200C)) 32 1; setpci -s 00:00.0 COMMAND=0002",
         r"^delta=1 status=0[0-9a-f]{2}8$",
-        "a CPU doorbell raises INTx: one interrupt through the PLIC to uio_pci_generic and the status INTx bit",
+        "a CPU doorbell raises INTx once the IRQ block user enable is set: one interrupt through the PLIC to uio_pci_generic and the status INTx bit",
+    ),
+]
+
+# DMA through BAR1 (XDMA-compatible registers, fpga/rtl/vdma.v): host buffers at 0x7E100000 and card memory at 0x7E000000 are reserved-memory regions of the
+# vpcie device tree (hg-xcku5p-vpcie.dtsi); the firmware side opens the card window (0xF800A070/74) to the first 512 KiB of the card region.
+VPCIE_DMA_PRE = (
+    "setpci -s 00:00.0 COMMAND=0002; b=$(sed -n 2p /sys/bus/pci/devices/0000:00:00.0/resource | cut -d' ' -f1); "
+    "w() { devmem $1 32 $2 >/dev/null; }; p=0x7E100000; c=0x7E000000; "
+    "desc() { w $((p+0x100)) 0xAD4B0003; w $((p+0x104)) $1; w $((p+0x108)) $2; w $((p+0x10C)) 0; "
+    "w $((p+0x110)) $3; w $((p+0x114)) 0; w $((p+0x118)) 0; w $((p+0x11C)) 0; }; "
+    "w 0xF800A070 $c; w 0xF800A074 0x80000; "
+)
+VPCIE_DMA_CHECKS = [
+    (
+        "vpcie_dma_ids",
+        VPCIE_DMA_PRE + "for o in 0x0 0x1000 0x2000 0x4000 0x5000; do devmem $((b+o)) 32; done",
+        r"0x1FC00006\n0x1FC10006\n0x1FC20006\n0x1FC40006\n0x1FC50006",
+        "BAR1 identifies the XDMA blocks (H2C, C2H, IRQ, H2C and C2H SGDMA)",
+    ),
+    (
+        "vpcie_dma_h2c",
+        VPCIE_DMA_PRE
+        + "for i in 0 1 2 3 4 5 6 7; do w $((p+4*i)) $((0xA5000000+i)); w $((c+4*i)) 0; done; "
+        "desc 32 $p $c; w $((b+0x4080)) $((p+0x100)); w $((b+0x4084)) 0; w $((b+4)) 1; sleep 1; "
+        "devmem $((b+0x44)) 32; devmem $((b+0x48)) 32; for i in 0 1 2 3 4 5 6 7; do devmem $((c+4*i)) 32; done; w $((b+4)) 0",
+        r"^0x0*6\n0x0*1\n0xA5000000\n0xA5000001\n0xA5000002\n0xA5000003\n0xA5000004\n0xA5000005\n0xA5000006\n0xA5000007$",
+        "H2C copies 32 bytes from host memory to card memory (status completed+stopped, count 1)",
+    ),
+    (
+        "vpcie_dma_c2h",
+        VPCIE_DMA_PRE
+        + "for i in 0 1 2 3 4 5 6 7; do w $((c+4*i)) $((0x5A5A0000+i)); w $((p+0x200+4*i)) 0; done; "
+        "desc 32 $c $((p+0x200)); w $((b+0x5080)) $((p+0x100)); w $((b+0x5084)) 0; w $((b+0x1004)) 1; sleep 1; "
+        "devmem $((b+0x1044)) 32; for i in 0 1 2 3 4 5 6 7; do devmem $((p+0x200+4*i)) 32; done; w $((b+0x1004)) 0",
+        r"^0x0*6\n0x5A5A0000\n0x5A5A0001\n0x5A5A0002\n0x5A5A0003\n0x5A5A0004\n0x5A5A0005\n0x5A5A0006\n0x5A5A0007$",
+        "C2H copies 32 bytes from card memory to host memory",
+    ),
+    (
+        "vpcie_dma_window",
+        VPCIE_DMA_PRE + "w $((c+0x80000)) 0x12345678; w $((p+0x300)) 0xCAFE0001; "
+        "desc 32 $((p+0x300)) $((c+0x80000)); w $((b+0x4080)) $((p+0x100)); w $((b+0x4084)) 0; w $((b+4)) 1; sleep 1; "
+        "devmem $((b+0x44)) 32; devmem $((c+0x80000)) 32; w $((b+4)) 0",
+        r"^0x0*4000\n0x12345678$",
+        "H2C into card memory outside the window is refused (write error) and writes nothing",
+    ),
+    (
+        "vpcie_dma_irq",
+        VPCIE_DMA_PRE + "n() { awk '/uio_pci_generic/ {print $2}' /proc/interrupts; }; "
+        "echo 10ee 9034 >/sys/bus/pci/drivers/uio_pci_generic/new_id 2>/dev/null; sleep 1; setpci -s 00:00.0 COMMAND=0002; "
+        "w $((p+0x400)) 0x600DF00D; desc 8 $((p+0x400)) $c; w $((b+0x2014)) 1; a=$(n); "
+        "w $((b+0x4080)) $((p+0x100)); w $((b+0x4084)) 0; w $((b+4)) 5; sleep 1; z=$(n); "
+        "echo delta=$((z-a)) cause=$(devmem $((b+0x204C)) 32); devmem $((b+0x44)) 32 >/dev/null; "
+        "w $((b+4)) 0; w $((b+0x2018)) 1; setpci -s 00:00.0 COMMAND=0002",
+        r"^delta=1 cause=0x0*1$",
+        "a DMA completion with the interrupt enabled reaches uio_pci_generic through the channel interrupt (IRQ block pending bit 0)",
     ),
 ]
 
@@ -309,7 +364,7 @@ def main():
         if a.pcie:
             checks += PCIE_CHECKS
         if a.vpcie:
-            checks += VPCIE_CHECKS
+            checks += VPCIE_CHECKS + VPCIE_DMA_CHECKS
         if a.net:
             checks += NET_CHECKS + [
                 (
