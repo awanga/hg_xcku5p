@@ -74,6 +74,14 @@ set_property -dict [list CONFIG.C_GPIO_WIDTH 19 CONFIG.C_ALL_INPUTS 0 CONFIG.C_A
 create_ip -name axi_timer -vendor xilinx.com -library ip -module_name tmr_0
 create_ip -name axi_iic -vendor xilinx.com -library ip -module_name iic_0
 set_property -dict [list CONFIG.AXI_ACLK_FREQ_MHZ 100 CONFIG.IIC_FREQ_KHZ 100] [get_ips iic_0]
+if {$vpcie} {
+    # the DMA engine's clock converter (per_clk -> CPU clock) and the shared hub DMA port crossbar (SI2 = the engine)
+    create_ip -name axi_clock_converter -vendor xilinx.com -library ip -module_name vdma_cc
+    set_property -dict [list CONFIG.PROTOCOL AXI4 CONFIG.DATA_WIDTH 64 CONFIG.ADDR_WIDTH 32 CONFIG.ID_WIDTH 4 CONFIG.ACLK_ASYNC 1] [get_ips vdma_cc]
+    create_ip -name axi_crossbar -vendor xilinx.com -library ip -module_name xbar_dma
+    set_property -dict [list CONFIG.PROTOCOL AXI4 CONFIG.NUM_SI 3 CONFIG.NUM_MI 1 CONFIG.ADDR_WIDTH 32 CONFIG.DATA_WIDTH 64 CONFIG.ID_WIDTH 2 \
+        CONFIG.M00_A00_BASE_ADDR 0x0000000000000000 CONFIG.M00_A00_ADDR_WIDTH 32] [get_ips xbar_dma]
+}
 if {$pcie} {
     if {!([string match "*dma*" $soc] || [string match "*l2*" $soc])} { error "-pcie needs a SoC netlist with the DMA port (name containing dma or l2)" }
     source $root/fpga/scripts/pcie/xdma_ip.tcl
@@ -99,7 +107,7 @@ if {$pcie} {
     add_files -fileset constrs_1 $root/fpga/constraints/pcie.xdc
 }
 if {$vpcie} {
-    add_files [list $root/fpga/rtl/vpcie_ep.v $root/fpga/rtl/vpcie.v $root/fpga/rtl/pcie_regs.v]
+    add_files [list $root/fpga/rtl/vpcie_ep.v $root/fpga/rtl/vpcie.v $root/fpga/rtl/vdma.v $root/fpga/rtl/pcie_regs.v]
 }
 set defs [list SOC_MODULE=$soc]
 if {$vpcie} { lappend defs WITH_VPCIE }

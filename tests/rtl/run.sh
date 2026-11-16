@@ -417,6 +417,30 @@ mut_vpd vp_rsel "s/rsel <= !r_hit0;/rsel <= 1'b0;/"
 mut_vpd vp_b1base "s/bar1 == {BASE\[31:21\], ra\[20:16\]}/bar1[4:0] == ra[20:16]/"
 mut_vpd vp_b1wr "s/if (wb\[2\]) bar1\[7:0\] <= wd\[23:16\];/if (wb[2]) bar1[7:0] <= wd[23:16] \& 8'hFE;/"
 mut_vpd vp_b1prio "s/wsel <= !w_hit0;/wsel <= w_hit1;/"
+# vpcie_ep (vpcie + pcie_regs + vdma wired together: BAR routing, window, interrupts)
+vpe=$here/fpga/rtl/vpcie_ep.v
+tbpd=$here/tests/rtl/tb_vpcie_dma.v
+vpe_srcs=("$here/fpga/rtl/vpcie.v" "$here/fpga/rtl/vdma.v" "$here/fpga/rtl/pcie_regs.v" "$here/fpga/rtl/axil_simple.v")
+run_vpe() { # name dut expect
+	iverilog -g2005 -o "$b/$1.vvp" "$tbpd" "$2" "${vpe_srcs[@]}" >"$b/$1.build.log" 2>&1 || { echo "FAIL $1 (build)"; fail=1; return; }
+	timeout 250 vvp "$b/$1.vvp" >"$b/$1.log" 2>&1
+	grep -q "TBRESULT.* $3\$" "$b/$1.log" && echo "PASS $1 [icarus, expect $3]" || { echo "FAIL $1 [expected $3]"; grep -E 'TBRESULT|FAIL' "$b/$1.log" | head -3; fail=1; }
+}
+run_vpe vpcie_ep "$vpe" PASS
+verilator --binary --timing -Wno-fatal -Wno-DECLFILENAME --top-module tb_vpcie_dma --Mdir "$b/vl_vpe" "$tbpd" "$vpe" "${vpe_srcs[@]}" >"$b/vl_vpe.build.log" 2>&1 || {
+	echo "FAIL vpcie_ep (verilator build)"; fail=1; }
+timeout 250 "$b/vl_vpe/Vtb_vpcie_dma" >"$b/vl_vpe.log" 2>&1
+grep -q "TBRESULT.* PASS\$" "$b/vl_vpe.log" && echo "PASS vpcie_ep [verilator]" || { echo "FAIL vpcie_ep [verilator]"; fail=1; }
+mut_vpe() { # name sed-expression
+	sed "$2" "$vpe" >"$b/mut_$1.v"
+	cmp -s "$vpe" "$b/mut_$1.v" && { echo "FAIL mutant $1 unchanged"; fail=1; }
+	run_vpe "mut_$1" "$b/mut_$1.v" FAIL
+}
+mut_vpe ep_rdata "s/assign v_rdata   = v_arsel ? d_rdata : h_rdata;/assign v_rdata   = h_rdata;/"
+mut_vpe ep_wready "s/assign v_wready  = v_awsel ? d_wready : h_wready;/assign v_wready  = h_wready;/"
+mut_vpe ep_intx "s/.intx_pending(dma_intx)/.intx_pending(cpu_db_any)/"
+mut_vpe ep_win "s/.win_size(win_size), .user_req/.win_size(32'hFFFFFFFF), .user_req/"
+mut_vpe ep_user "s/.user_req(cpu_db_any)/.user_req(1'b0)/"
 # vdma (XDMA-compatible DMA subset of the logical root complex)
 vdd=$here/fpga/rtl/vdma.v
 tbd=$here/tests/rtl/tb_vdma.v

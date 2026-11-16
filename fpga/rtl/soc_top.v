@@ -13,11 +13,16 @@
 //   that stays closed until the CPU opens it, and a crossbar that shares the hub DMA port between the Ethernet copy engine, HDMI and PCIe.
 // `define WITH_VPCIE (build_soc.tcl -vpcie, needs the netlist with the extra 2 MiB peripheral region) replaces the endpoint by a logical PCIe device behind a
 //   generic ECAM host bridge for the CPU itself (fpga/rtl/vpcie_ep.v): registers still at 0xF800A000 (PLIC source 9), the bridge window at 0xF9000000
-//   (crossbar slave 13), the device's INTx on PLIC source 10. No GTY, no XDMA, no DMA port sharing.
+//   (crossbar slave 13), the device's INTx on PLIC source 10, a DMA engine (fpga/rtl/vdma.v, XDMA-compatible registers in BAR1) on the shared hub DMA port.
+//   No GTY, no XDMA IP.
 `ifdef WITH_VPCIE
 `define NMST 14
+`define XDMA_XBAR
 `else
 `define NMST 13
+`endif
+`ifdef WITH_PCIE
+`define XDMA_XBAR
 `endif
 module soc_top #(
     parameter integer CPU_KHZ = 333333, // ui_clk in kHz, reported by soc_regs; keep in step with the DDR4 TimePeriod
@@ -649,7 +654,7 @@ ddr4_0 u_ddr4 (
         .m_axi_arlock(), .m_axi_arcache(), .m_axi_arprot(), .m_axi_arregion(), .m_axi_arqos(),
         .m_axi_arvalid(hr_arvalid), .m_axi_arready(hr_arready),
         .m_axi_rid(hr_rid), .m_axi_rdata(hr_rdata), .m_axi_rresp(hr_rresp), .m_axi_rlast(hr_rlast), .m_axi_rvalid(hr_rvalid), .m_axi_rready(hr_rready));
-`ifdef WITH_PCIE
+`ifdef XDMA_XBAR
     // ---------------------------------------------------------------- shared hub DMA port: eth_dma (writes), HDMI (reads), PCIe (reads and writes)
     // The crossbar takes 2-bit ids and returns 4-bit ids (the hub's id width); the two single-direction masters use id 0.
     wire [3:0]  pm_awid, pm_arid;
@@ -710,6 +715,7 @@ ddr4_0 u_ddr4 (
     assign pm_rlast = xd_rlast[2];
     assign pm_rid = {2'd0, xd_rid[5:4]};
 
+`ifdef WITH_PCIE
     pcie_ep u_pcie (
         .sys_clk_p(pcie_refclk_p), .sys_clk_n(pcie_refclk_n), .sys_rst_n(pcie_perst_n),
         .pci_exp_txp(pcie_txp), .pci_exp_txn(pcie_txn), .pci_exp_rxp(pcie_rxp), .pci_exp_rxn(pcie_rxn),
@@ -726,6 +732,7 @@ ddr4_0 u_ddr4 (
         .c_araddr(x_araddr[390:384]), .c_arvalid(x_arvalid[12]), .c_arready(x_arready[12]),
         .c_rdata(x_rdata[415:384]), .c_rresp(x_rresp[25:24]), .c_rvalid(x_rvalid[12]), .c_rready(x_rready[12]),
         .irq(pcie_irq));
+`endif
 `else
     // without PCIe: the two masters go straight to the hub port
     assign dma_awid = 4'd0;
@@ -778,7 +785,14 @@ ddr4_0 u_ddr4 (
         .c_bresp(x_bresp[25:24]), .c_bvalid(x_bvalid[12]), .c_bready(x_bready[12]),
         .c_araddr(x_araddr[390:384]), .c_arvalid(x_arvalid[12]), .c_arready(x_arready[12]),
         .c_rdata(x_rdata[415:384]), .c_rresp(x_rresp[25:24]), .c_rvalid(x_rvalid[12]), .c_rready(x_rready[12]),
-        .irq(pcie_irq), .intx(vpcie_intx));
+        .irq(pcie_irq), .intx(vpcie_intx),
+        .cclk(cpu_clk), .crst_n(cpu_rst_n),
+        .m_awid(pm_awid), .m_awaddr(pm_awaddr), .m_awlen(pm_awlen), .m_awsize(pm_awsize), .m_awburst(pm_awburst), .m_awvalid(pm_awvalid),
+        .m_awready(pm_awready), .m_wdata(pm_wdata), .m_wstrb(pm_wstrb), .m_wlast(pm_wlast), .m_wvalid(pm_wvalid), .m_wready(pm_wready),
+        .m_bid(pm_bid), .m_bresp(pm_bresp), .m_bvalid(pm_bvalid), .m_bready(pm_bready),
+        .m_arid(pm_arid), .m_araddr(pm_araddr), .m_arlen(pm_arlen), .m_arsize(pm_arsize), .m_arburst(pm_arburst), .m_arvalid(pm_arvalid),
+        .m_arready(pm_arready), .m_rid(pm_rid), .m_rdata(pm_rdata), .m_rresp(pm_rresp), .m_rlast(pm_rlast), .m_rvalid(pm_rvalid),
+        .m_rready(pm_rready));
 `endif
 `ifndef WITH_PCIE
 `ifndef WITH_VPCIE
