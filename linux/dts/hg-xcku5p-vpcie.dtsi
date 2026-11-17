@@ -1,0 +1,44 @@
+// SPDX-License-Identifier: MIT
+/*
+ * Logical PCIe root complex (fpga/rtl/vpcie.v, decision 0008): a generic ECAM host bridge for the CPU's own PCIe device. The 2 MiB peripheral window at
+ * 0xF9000000 holds the ECAM of bus 0 (1 MiB) and the BAR memory window (1 MiB at 0xF9100000, PCI addresses equal CPU addresses). The one device
+ * (00:00.0, 10ee:9034) raises INTA on PLIC source 10. Needs a kernel built with KVPCIE=1 and the -vpcie bitstream: without that window the ECAM
+ * accesses would fault.
+ *
+ * DMA test regions (stage 2, docs/validation/vpcie-root-complex.md): 1 MiB of "card memory" at 0x7E000000 and 1 MiB of host buffers at 0x7E100000 are
+ * kept out of the kernel's memory; tools/smoke.py drives the DMA engine's descriptors and data through them with devmem. The DMA engine reads and writes
+ * DDR4 through the coherent hub DMA port, so the PCI node is dma-coherent.
+ */
+/ {
+	reserved-memory {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+
+		vpcie_card: card@7e000000 {
+			reg = <0x7e000000 0x100000>;
+			no-map;
+		};
+
+		vpcie_host: hostbuf@7e100000 {
+			reg = <0x7e100000 0x100000>;
+			no-map;
+		};
+	};
+
+	soc {
+		pcie0: pcie@f9000000 {
+			compatible = "pci-host-ecam-generic";
+			device_type = "pci";
+			dma-coherent;
+			reg = <0xf9000000 0x100000>;
+			bus-range = <0x0 0x0>;
+			#address-cells = <3>;
+			#size-cells = <2>;
+			#interrupt-cells = <1>;
+			ranges = <0x02000000 0x0 0xf9100000 0xf9100000 0x0 0x100000>;
+			interrupt-map-mask = <0 0 0 7>;
+			interrupt-map = <0 0 0 1 &plic 10>;
+		};
+	};
+};

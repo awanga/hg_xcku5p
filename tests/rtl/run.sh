@@ -376,6 +376,118 @@ mut_prg prg_hostwin "s/if (c_we \&\& c_addr\[6:2\] == 5'd29) wsize <= c_wd;/if (
 mut_prg prg_hostrdwin "s/5'd29: rd = cpu ? wsize : 32'd0;/5'd29: rd = wsize;/"
 mut_prg prg_winrst "s/            wsize <= 32'd0;\n//; s/wsize <= 32'd0;/wsize <= wsize;/"
 mut_prg prg_sticky "s/else if (c_we \&\& c_addr\[6:2\] == 5'd1 \&\& c_wd\[5\]) ever_up <= 1'b0;/else ever_up <= 1'b0;/"
+# vpcie (logical PCIe device of the CPU-as-root-complex variant)
+vpd=$here/fpga/rtl/vpcie.v
+tbv=$here/tests/rtl/tb_vpcie.v
+vp_srcs=("$here/fpga/rtl/pcie_regs.v" "$here/fpga/rtl/axil_simple.v")
+verilator --lint-only -Wall -Wno-DECLFILENAME "$vpd" >"$b/lint_vpd.log" 2>&1 && echo "PASS lint vpcie" || {
+	echo "FAIL lint vpcie"; head "$b/lint_vpd.log"; fail=1; }
+run_vpd() { # name dut expect [iverilog args]
+	local n=$1 d=$2 e=$3
+	shift 3
+	iverilog -g2005 "$@" -o "$b/$n.vvp" "$tbv" "$d" "${vp_srcs[@]}" >"$b/$n.build.log" 2>&1 || { echo "FAIL $n (build)"; fail=1; return; }
+	timeout 250 vvp "$b/$n.vvp" >"$b/$n.log" 2>&1
+	grep -q "TBRESULT.* $e\$" "$b/$n.log" && echo "PASS $n [icarus, expect $e]" || { echo "FAIL $n [expected $e]"; grep -E 'TBRESULT|FAIL' "$b/$n.log" | head -3; fail=1; }
+}
+run_vpd vpcie "$vpd" PASS
+run_vpd vpcie_slow "$vpd" PASS -P tb_vpcie.RDLY=3
+verilator --binary --timing -Wno-fatal -Wno-DECLFILENAME --top-module tb_vpcie --Mdir "$b/vl_vpd" "$tbv" "$vpd" "${vp_srcs[@]}" >"$b/vl_vpd.build.log" 2>&1 || {
+	echo "FAIL vpcie (verilator build)"; fail=1; }
+timeout 250 "$b/vl_vpd/Vtb_vpcie" >"$b/vl_vpd.log" 2>&1
+grep -q "TBRESULT.* PASS\$" "$b/vl_vpd.log" && echo "PASS vpcie [verilator]" || { echo "FAIL vpcie [verilator]"; fail=1; }
+mut_vpd() { # name sed-expression
+	sed "$2" "$vpd" >"$b/mut_$1.v"
+	cmp -s "$vpd" "$b/mut_$1.v" && { echo "FAIL mutant $1 unchanged"; fail=1; }
+	run_vpd "mut_$1" "$b/mut_$1.v" FAIL
+}
+mut_vpd vp_rmem "s/wire r_hit0   = ra\[20\] \&\& cmd_mem \&\&/wire r_hit0   = ra[20] \&\&/"
+mut_vpd vp_wmem "s/wire w_hit0   = wa\[20\] \&\& cmd_mem \&\&/wire w_hit0   = wa[20] \&\&/"
+mut_vpd vp_base "s/bar0 == {BASE\[31:21\], ra\[20:16\]}/bar0[4:0] == ra[20:16]/"
+mut_vpd vp_abort "s/r_cfg_f0 ? cfg_q : 32'hFFFFFFFF/r_cfg_f0 ? cfg_q : 32'd0/"
+mut_vpd vp_cmdstrb "s/if (wb\[1\]) cmd_intxd <= wd\[10\];/if (wb[0]) cmd_intxd <= wd[10];/"
+mut_vpd vp_intxd "s/assign intx = intx_pending \& ~cmd_intxd;/assign intx = intx_pending;/"
+mut_vpd vp_status "s/{12'd0, intx_pending, 3'd0,/{12'd0, intx, 3'd0,/"
+mut_vpd vp_off "s/assign m_awaddr  = wa\[15:0\];/assign m_awaddr  = {10'd0, wa[5:0]};/"
+mut_vpd vp_rst "s/            bar0 <= 16'd0;//"
+mut_vpd vp_dev "s/(ra\[19:12\] == 8'd0)/(ra[19:15] == 5'd0)/"
+mut_vpd vp_wdev "s/(wa\[19:12\] == 8'd0)/(wa[19:15] == 5'd0)/"
+mut_vpd vp_bar "s/if (wb\[2\]) bar0\[7:0\] <= wd\[23:16\];/if (wb[2]) bar0[7:0] <= wd[23:16] \& 8'hFE;/"
+mut_vpd vp_wsel "s/wsel <= !w_hit0;/wsel <= 1'b0;/"
+mut_vpd vp_rsel "s/rsel <= !r_hit0;/rsel <= 1'b0;/"
+mut_vpd vp_b1base "s/bar1 == {BASE\[31:21\], ra\[20:16\]}/bar1[4:0] == ra[20:16]/"
+mut_vpd vp_b1wr "s/if (wb\[2\]) bar1\[7:0\] <= wd\[23:16\];/if (wb[2]) bar1[7:0] <= wd[23:16] \& 8'hFE;/"
+mut_vpd vp_b1prio "s/wsel <= !w_hit0;/wsel <= w_hit1;/"
+# vpcie_ep (vpcie + pcie_regs + vdma wired together: BAR routing, window, interrupts)
+vpe=$here/fpga/rtl/vpcie_ep.v
+tbpd=$here/tests/rtl/tb_vpcie_dma.v
+vpe_srcs=("$here/fpga/rtl/vpcie.v" "$here/fpga/rtl/vdma.v" "$here/fpga/rtl/pcie_regs.v" "$here/fpga/rtl/axil_simple.v")
+run_vpe() { # name dut expect
+	iverilog -g2005 -o "$b/$1.vvp" "$tbpd" "$2" "${vpe_srcs[@]}" >"$b/$1.build.log" 2>&1 || { echo "FAIL $1 (build)"; fail=1; return; }
+	timeout 250 vvp "$b/$1.vvp" >"$b/$1.log" 2>&1
+	grep -q "TBRESULT.* $3\$" "$b/$1.log" && echo "PASS $1 [icarus, expect $3]" || { echo "FAIL $1 [expected $3]"; grep -E 'TBRESULT|FAIL' "$b/$1.log" | head -3; fail=1; }
+}
+run_vpe vpcie_ep "$vpe" PASS
+verilator --binary --timing -Wno-fatal -Wno-DECLFILENAME --top-module tb_vpcie_dma --Mdir "$b/vl_vpe" "$tbpd" "$vpe" "${vpe_srcs[@]}" >"$b/vl_vpe.build.log" 2>&1 || {
+	echo "FAIL vpcie_ep (verilator build)"; fail=1; }
+timeout 250 "$b/vl_vpe/Vtb_vpcie_dma" >"$b/vl_vpe.log" 2>&1
+grep -q "TBRESULT.* PASS\$" "$b/vl_vpe.log" && echo "PASS vpcie_ep [verilator]" || { echo "FAIL vpcie_ep [verilator]"; fail=1; }
+mut_vpe() { # name sed-expression
+	sed "$2" "$vpe" >"$b/mut_$1.v"
+	cmp -s "$vpe" "$b/mut_$1.v" && { echo "FAIL mutant $1 unchanged"; fail=1; }
+	run_vpe "mut_$1" "$b/mut_$1.v" FAIL
+}
+mut_vpe ep_rdata "s/assign v_rdata   = v_arsel ? d_rdata : h_rdata;/assign v_rdata   = h_rdata;/"
+mut_vpe ep_wready "s/assign v_wready  = v_awsel ? d_wready : h_wready;/assign v_wready  = h_wready;/"
+mut_vpe ep_intx "s/.intx_pending(dma_intx)/.intx_pending(cpu_db_any)/"
+mut_vpe ep_win "s/.win_size(win_size), .user_req/.win_size(32'hFFFFFFFF), .user_req/"
+mut_vpe ep_user "s/.user_req(cpu_db_any)/.user_req(1'b0)/"
+# vdma (XDMA-compatible DMA subset of the logical root complex)
+vdd=$here/fpga/rtl/vdma.v
+tbd=$here/tests/rtl/tb_vdma.v
+verilator --lint-only -Wall -Wno-DECLFILENAME "$vdd" "$here/fpga/rtl/axil_simple.v" >"$b/lint_vdd.log" 2>&1 && echo "PASS lint vdma" || {
+	echo "FAIL lint vdma"; head "$b/lint_vdd.log"; fail=1; }
+run_vdd() { # name dut expect [iverilog args]
+	local n=$1 d=$2 e=$3
+	shift 3
+	iverilog -g2005 "$@" -o "$b/$n.vvp" "$tbd" "$d" "$here/fpga/rtl/axil_simple.v" >"$b/$n.build.log" 2>&1 || { echo "FAIL $n (build)"; fail=1; return; }
+	timeout 280 vvp "$b/$n.vvp" >"$b/$n.log" 2>&1
+	grep -q "TBRESULT.* $e\$" "$b/$n.log" && echo "PASS $n [icarus, expect $e]" || { echo "FAIL $n [expected $e]"; grep -E 'TBRESULT|FAIL' "$b/$n.log" | head -3; fail=1; }
+}
+run_vdd vdma "$vdd" PASS
+run_vdd vdma_slow "$vdd" PASS -P tb_vdma.LAT=2
+verilator --binary --timing -Wno-fatal -Wno-DECLFILENAME --top-module tb_vdma --Mdir "$b/vl_vdd" "$tbd" "$vdd" "$here/fpga/rtl/axil_simple.v" >"$b/vl_vdd.build.log" 2>&1 || {
+	echo "FAIL vdma (verilator build)"; fail=1; }
+timeout 280 "$b/vl_vdd/Vtb_vdma" >"$b/vl_vdd.log" 2>&1
+grep -q "TBRESULT.* PASS\$" "$b/vl_vdd.log" && echo "PASS vdma [verilator]" || { echo "FAIL vdma [verilator]"; fail=1; }
+mut_vdd() { # name sed-expression
+	sed "$2" "$vdd" >"$b/mut_$1.v"
+	cmp -s "$vdd" "$b/mut_$1.v" && { echo "FAIL mutant $1 unchanged"; fail=1; }
+	run_vdd "mut_$1" "$b/mut_$1.v" FAIL
+}
+mut_vdd vd_magic "s/(d0\[31:16\] == 16'hAD4B)/(d0[31:24] == 8'hAD)/"
+mut_vdd vd_winend "s/(s_end <= w_end)/(s_end < w_end)/; s/(t_end <= w_end)/(t_end < w_end)/"
+mut_vdd vd_winbase "s/(d2\[31:0\] >= win_base)/(d2[31:0] > win_base)/"
+mut_vdd vd_winbase_s "s/(d1\[31:0\] >= win_base)/(d1[31:0] > win_base)/"
+mut_vdd vd_srcside "s/(cur ? !s_win : 1'b0)/!s_win/"
+mut_vdd vd_dstside "s/(cur ? 1'b0 : !t_win)/!t_win/"
+mut_vdd vd_hisrc "s/host_src_hi || (cur/(cur/"
+mut_vdd vd_hidst "s/host_dst_hi || (cur/(cur/"
+mut_vdd vd_misal "s/|| (dlen\[2:0\] != 3'd0)//"
+mut_vdd vd_4k "s/(s4k < d4k) ? s4k : d4k/s4k/"
+mut_vdd vd_chunk "s/(m1 < 13'd128) ? m1 : 13'd128/(m1 < 13'd256) ? m1 : 13'd256/"
+mut_vdd vd_count "s/cnt0 <= cnt0 + 32'd1/cnt0 <= cnt0 + 32'd2/"
+mut_vdd vd_rc "s/(stl0 \& ~((rc_do \&\& !rc_ch) ? EV : 32'd0))/stl0/"
+mut_vdd vd_cen "s/assign intx = (user_req \& uen\[0\]) | (|(creq \& cen));/assign intx = (user_req \& uen[0]) | (|creq);/"
+mut_vdd vd_uen "s/assign intx = (user_req \& uen\[0\])/assign intx = (user_req)/"
+mut_vdd vd_edge "s/if (ctl0\[0\] \&\& !run_q\[0\] \&\& !busy0)/if (ctl0[0] \&\& !busy0)/"
+mut_vdd vd_next0 "s/ || d3 == 64'd0//"
+mut_vdd vd_abort "s/ || !(cur ? ctl1\[0\] : ctl0\[0\])//"
+mut_vdd vd_wrerr "s/if (m_bresp != 2'b00) begin/if (1'b0) begin/"
+mut_vdd vd_rderr "s/if (rerr || m_rresp != 2'b00) begin/if (1'b0) begin/"
+mut_vdd vd_descerr "s/if (rerr) begin/if (1'b0) begin/"
+mut_vdd vd_arhi "s/(st == E_DAR \&\& dhi == 32'd0)/(st == E_DAR)/"
+mut_vdd vd_lenz "s/end else if (dlen == 28'd0) begin/end else if (1'b0) begin/"
+mut_vdd vd_cmpl "s/ev_bits <= (cmpl_b ? 32'h00000006 : 32'h00000002);/ev_bits <= 32'h00000002;/"
 # axi_win (AXI4 window filter of the PCIe DMA master)
 aw=$here/fpga/rtl/axi_win.v
 tbw=$here/tests/rtl/tb_axi_win.v
