@@ -163,9 +163,12 @@ else if (testname == "pcie_ep_nocpu") begin : t_nocpu
     // CPU-less build (decision 0008, variant 3): BAR0 reaches the peripheral-bus master port of the endpoint (a word memory in the wrapper, word i = C0DE0000 + i)
     // instead of the register block; the register block stays reachable through the CPU-side port (here the CPU agent).
     integer errs;
+    integer rd0, wr0;
     begin
         errs = 0;
         board.EP.find_lite_bar;
+        rd0 = board.EP.hl_rd_n;   // the vendor bench may already have read BAR0 while enumerating
+        wr0 = board.EP.hl_wr_n;
         board.EP.host_rd(32'h0000);
         if (board.EP.host_rdata !== 32'hC0DE0000) begin errs = errs + 1; $display("ERROR: BAR0+0 %h != C0DE0000 (still the register block?)", board.EP.host_rdata); end
         board.EP.host_rd(32'h0010);
@@ -175,12 +178,12 @@ else if (testname == "pcie_ep_nocpu") begin : t_nocpu
         if (board.EP.host_rdata !== 32'hC0DE0000 + 32'hA070 / 4) begin errs = errs + 1; $display("ERROR: BAR0+0xA070 %h", board.EP.host_rdata); end
         board.EP.host_rd(32'hFFFC);
         if (board.EP.host_rdata !== 32'hC0DE3FFF) begin errs = errs + 1; $display("ERROR: BAR0+0xFFFC %h != C0DE3FFF", board.EP.host_rdata); end
-        if (board.EP.hl_rd_n !== 4) begin errs = errs + 1; $display("ERROR: %0d reads reached the port, expected 4", board.EP.hl_rd_n); end
+        if (board.EP.hl_rd_n - rd0 !== 4) begin errs = errs + 1; $display("ERROR: %0d reads reached the port, expected 4", board.EP.hl_rd_n - rd0); end
 
         board.EP.host_wr(32'h2020, 32'h12345678);
         if (board.EP.hmem[32'h2020 / 4] !== 32'h12345678) begin errs = errs + 1; $display("ERROR: write data at the port %h", board.EP.hmem[32'h2020 / 4]); end
         if (board.EP.hl_last_wa !== 16'h2020 || board.EP.hl_last_ws !== 4'hF) begin errs = errs + 1; $display("ERROR: write address %h strobes %h", board.EP.hl_last_wa, board.EP.hl_last_ws); end
-        if (board.EP.hl_wr_n !== 1) begin errs = errs + 1; $display("ERROR: %0d writes reached the port, expected 1", board.EP.hl_wr_n); end
+        if (board.EP.hl_wr_n - wr0 !== 1) begin errs = errs + 1; $display("ERROR: %0d writes reached the port, expected 1", board.EP.hl_wr_n - wr0); end
         board.EP.host_rd(32'h2020);
         if (board.EP.host_rdata !== 32'h12345678) begin errs = errs + 1; $display("ERROR: readback %h", board.EP.host_rdata); end
         if (board.EP.hmem[32'h2024 / 4] !== 32'hC0DE0000 + 32'h2024 / 4) begin errs = errs + 1; $display("ERROR: the neighbouring word changed"); end
