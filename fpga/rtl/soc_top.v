@@ -9,6 +9,7 @@
 // Address map (see docs/validation/soc-minimal.md): DDR4 0x4000_0000 (1 GiB), boot ROM 0x1000_0000 (16 KiB, mirrored in 64 KiB),
 //   UART lite 0xF800_0000, board regs 0xF800_1000, CLINT 0xF001_0000, PLIC 0xF0C0_0000.
 // `define WITH_DMA when the SoC netlist was generated with --with-dma (the coherent DMA port is tied off).
+// `define NOCPU (build_soc.tcl -nocpu, decision 0008 variant 3) replaces the CPU netlist by nocpu_core (UART2 test rig as the only bus master, WITH_DMA implied).
 // `define WITH_PCIE (build_soc.tcl -pcie) adds the PCIe endpoint (fpga/rtl/pcie_ep.v): registers at 0xF800A000, PLIC source 9, a DMA window into DDR
 //   that stays closed until the CPU opens it, and a crossbar that shares the hub DMA port between the Ethernet copy engine, HDMI and PCIe.
 // `define WITH_VPCIE (build_soc.tcl -vpcie, needs the netlist with the extra 2 MiB peripheral region) replaces the endpoint by a logical PCIe device behind a
@@ -23,6 +24,19 @@
 `endif
 `ifdef WITH_PCIE
 `define XDMA_XBAR
+`endif
+// CPU-less with PCIe: the host's BAR0 is a third master of the peripheral crossbar (HSI(...) adds its part to a slave-interface vector, empty otherwise)
+`ifdef NOCPU
+`ifdef WITH_PCIE
+`define NOCPU_PCIE
+`endif
+`endif
+`ifdef NOCPU_PCIE
+`define NSI 3
+`define HSI(a) a,
+`else
+`define NSI 2
+`define HSI(a)
 `endif
 module soc_top #(
     parameter integer CPU_KHZ = 333333, // ui_clk in kHz, reported by soc_regs; keep in step with the DDR4 TimePeriod
@@ -77,6 +91,11 @@ module soc_top #(
     output wire [2:0]  hdmi_d_n,
     output wire        hdmi_oe,
     input  wire        hdmi_hpd,
+`ifdef NOCPU
+    // UART2 (CP2105 ECI, bank 67 at VADJ 1.8 V): the test rig
+    input  wire        uart2_rx,
+    output wire        uart2_tx,
+`endif
 `ifdef WITH_PCIE
     // PCIe edge connector (Gen3 x4, GTY quad 224): slot reference clock, PERST# (bank 66, VADJ), lanes
     input  wire        pcie_refclk_p,
@@ -205,6 +224,34 @@ module soc_top #(
     wire [1:0]  dma_bresp, dma_rresp;
 `endif
 
+`ifdef NOCPU
+    nocpu_core u_soc (
+        .litex_clk(cpu_clk),
+        .litex_reset(cpu_reset),
+        .peripheral_externalInterrupts_port(irq),
+        .uart2_rx(uart2_rx), .uart2_tx(uart2_tx),
+        .mBus_awvalid(m_awvalid), .mBus_awready(m_awready), .mBus_awaddr(m_awaddr), .mBus_awid(m_awid),
+        .mBus_awlen(m_awlen), .mBus_awsize(m_awsize), .mBus_awburst(m_awburst),
+        .mBus_wvalid(m_wvalid), .mBus_wready(m_wready), .mBus_wdata(m_wdata), .mBus_wstrb(m_wstrb), .mBus_wlast(m_wlast),
+        .mBus_bvalid(m_bvalid), .mBus_bready(m_bready), .mBus_bid(m_bid), .mBus_bresp(m_bresp),
+        .mBus_arvalid(m_arvalid), .mBus_arready(m_arready), .mBus_araddr(m_araddr), .mBus_arid(m_arid),
+        .mBus_arlen(m_arlen), .mBus_arsize(m_arsize), .mBus_arburst(m_arburst),
+        .mBus_rvalid(m_rvalid), .mBus_rready(m_rready), .mBus_rdata(m_rdata), .mBus_rid(m_rid),
+        .mBus_rresp(m_rresp), .mBus_rlast(m_rlast),
+        .pBus_awvalid(p_awvalid), .pBus_awready(p_awready), .pBus_awaddr(p_awaddr), .pBus_awprot(p_awprot),
+        .pBus_wvalid(p_wvalid), .pBus_wready(p_wready), .pBus_wdata(p_wdata), .pBus_wstrb(p_wstrb),
+        .pBus_bvalid(p_bvalid), .pBus_bready(p_bready), .pBus_bresp(p_bresp),
+        .pBus_arvalid(p_arvalid), .pBus_arready(p_arready), .pBus_araddr(p_araddr), .pBus_arprot(p_arprot),
+        .pBus_rvalid(p_rvalid), .pBus_rready(p_rready), .pBus_rdata(p_rdata), .pBus_rresp(p_rresp),
+        .dma_bus_awvalid(dma_awvalid), .dma_bus_awready(dma_awready), .dma_bus_awaddr(dma_awaddr), .dma_bus_awid(dma_awid),
+        .dma_bus_awlen(dma_awlen), .dma_bus_awsize(dma_awsize), .dma_bus_awburst(dma_awburst),
+        .dma_bus_wvalid(dma_wvalid), .dma_bus_wready(dma_wready), .dma_bus_wdata(dma_wdata), .dma_bus_wstrb(dma_wstrb), .dma_bus_wlast(dma_wlast),
+        .dma_bus_bvalid(dma_bvalid), .dma_bus_bready(dma_bready), .dma_bus_bid(dma_bid), .dma_bus_bresp(dma_bresp),
+        .dma_bus_arvalid(dma_arvalid), .dma_bus_arready(dma_arready), .dma_bus_araddr(dma_araddr), .dma_bus_arid(dma_arid),
+        .dma_bus_arlen(dma_arlen), .dma_bus_arsize(dma_arsize), .dma_bus_arburst(dma_arburst),
+        .dma_bus_rvalid(dma_rvalid), .dma_bus_rready(dma_rready), .dma_bus_rdata(dma_rdata), .dma_bus_rid(dma_rid),
+        .dma_bus_rresp(dma_rresp), .dma_bus_rlast(dma_rlast));
+`else
     `SOC_MODULE u_soc (
         .litex_clk(cpu_clk),
         .litex_reset(cpu_reset),
@@ -235,6 +282,7 @@ module soc_top #(
         .dma_bus_rresp(dma_rresp), .dma_bus_rlast(dma_rlast),
 `endif
         .debug());
+`endif
 
     // ---------------------------------------------------------------- memory path: CPU AXI port -> DDR4 controller
     wire [3:0]  d_awcache = 4'd0, d_arcache = 4'd0, d_awqos = 4'd0, d_arqos = 4'd0;
@@ -355,17 +403,24 @@ ddr4_0 u_ddr4 (
     wire [31:0] dm_araddr, dm_rdata;
     wire        dm_arvalid, dm_rready;
     wire [1:0]  dm_rresp;
-    wire [1:0]  xs_awready, xs_wready, xs_bvalid, xs_arready, xs_rvalid;
-    wire [3:0]  xs_bresp, xs_rresp;
-    wire [63:0] xs_rdata;
+    wire [`NSI-1:0]   xs_awready, xs_wready, xs_bvalid, xs_arready, xs_rvalid;
+    wire [2*`NSI-1:0] xs_bresp, xs_rresp;
+    wire [32*`NSI-1:0] xs_rdata;
+`ifdef NOCPU_PCIE
+    wire [15:0] hl_awaddr, hl_araddr;
+    wire [31:0] hl_wdata, hl_rdata;
+    wire [3:0]  hl_wstrb;
+    wire [1:0]  hl_bresp, hl_rresp;
+    wire        hl_awvalid, hl_awready, hl_wvalid, hl_wready, hl_bvalid, hl_bready, hl_arvalid, hl_arready, hl_rvalid, hl_rready;
+`endif
 
     xbar_per u_xbar (
         .aclk(per_clk), .aresetn(per_rst_n),
-        .s_axi_awaddr({32'd0, q_awaddr}), .s_axi_awprot({3'd0, q_awprot}), .s_axi_awvalid({1'b0, q_awvalid}), .s_axi_awready(xs_awready),
-        .s_axi_wdata({32'd0, q_wdata}), .s_axi_wstrb({4'd0, q_wstrb}), .s_axi_wvalid({1'b0, q_wvalid}), .s_axi_wready(xs_wready),
-        .s_axi_bresp(xs_bresp), .s_axi_bvalid(xs_bvalid), .s_axi_bready({1'b1, q_bready}),
-        .s_axi_araddr({dm_araddr, q_araddr}), .s_axi_arprot({3'd0, q_arprot}), .s_axi_arvalid({dm_arvalid, q_arvalid}), .s_axi_arready(xs_arready),
-        .s_axi_rdata(xs_rdata), .s_axi_rresp(xs_rresp), .s_axi_rvalid(xs_rvalid), .s_axi_rready({dm_rready, q_rready}),
+        .s_axi_awaddr({`HSI({16'hF800, hl_awaddr}) 32'd0, q_awaddr}), .s_axi_awprot({`HSI(3'd0) 3'd0, q_awprot}), .s_axi_awvalid({`HSI(hl_awvalid) 1'b0, q_awvalid}), .s_axi_awready(xs_awready),
+        .s_axi_wdata({`HSI(hl_wdata) 32'd0, q_wdata}), .s_axi_wstrb({`HSI(hl_wstrb) 4'd0, q_wstrb}), .s_axi_wvalid({`HSI(hl_wvalid) 1'b0, q_wvalid}), .s_axi_wready(xs_wready),
+        .s_axi_bresp(xs_bresp), .s_axi_bvalid(xs_bvalid), .s_axi_bready({`HSI(hl_bready) 1'b1, q_bready}),
+        .s_axi_araddr({`HSI({16'hF800, hl_araddr}) dm_araddr, q_araddr}), .s_axi_arprot({`HSI(3'd0) 3'd0, q_arprot}), .s_axi_arvalid({`HSI(hl_arvalid) dm_arvalid, q_arvalid}), .s_axi_arready(xs_arready),
+        .s_axi_rdata(xs_rdata), .s_axi_rresp(xs_rresp), .s_axi_rvalid(xs_rvalid), .s_axi_rready({`HSI(hl_rready) dm_rready, q_rready}),
         .m_axi_awaddr(x_awaddr), .m_axi_awprot(x_awprot), .m_axi_awvalid(x_awvalid), .m_axi_awready(x_awready),
         .m_axi_wdata(x_wdata), .m_axi_wstrb(x_wstrb), .m_axi_wvalid(x_wvalid), .m_axi_wready(x_wready),
         .m_axi_bresp(x_bresp), .m_axi_bvalid(x_bvalid), .m_axi_bready(x_bready),
@@ -382,6 +437,16 @@ ddr4_0 u_ddr4 (
     assign q_rvalid = xs_rvalid[0];
     assign dm_rdata = xs_rdata[63:32];
     assign dm_rresp = xs_rresp[3:2];
+`ifdef NOCPU_PCIE
+    assign hl_awready = xs_awready[2];
+    assign hl_wready = xs_wready[2];
+    assign hl_bresp = xs_bresp[5:4];
+    assign hl_bvalid = xs_bvalid[2];
+    assign hl_arready = xs_arready[2];
+    assign hl_rdata = xs_rdata[95:64];
+    assign hl_rresp = xs_rresp[5:4];
+    assign hl_rvalid = xs_rvalid[2];
+`endif
 
     uart_0 u_uart (
         .s_axi_aclk(per_clk), .s_axi_aresetn(per_rst_n), .interrupt(uart_irq_pulse),
@@ -731,6 +796,12 @@ ddr4_0 u_ddr4 (
         .c_bresp(x_bresp[25:24]), .c_bvalid(x_bvalid[12]), .c_bready(x_bready[12]),
         .c_araddr(x_araddr[390:384]), .c_arvalid(x_arvalid[12]), .c_arready(x_arready[12]),
         .c_rdata(x_rdata[415:384]), .c_rresp(x_rresp[25:24]), .c_rvalid(x_rvalid[12]), .c_rready(x_rready[12]),
+`ifdef NOCPU
+        .hl_awaddr(hl_awaddr), .hl_awvalid(hl_awvalid), .hl_awready(hl_awready), .hl_wdata(hl_wdata), .hl_wstrb(hl_wstrb), .hl_wvalid(hl_wvalid),
+        .hl_wready(hl_wready), .hl_bresp(hl_bresp), .hl_bvalid(hl_bvalid), .hl_bready(hl_bready),
+        .hl_araddr(hl_araddr), .hl_arvalid(hl_arvalid), .hl_arready(hl_arready), .hl_rdata(hl_rdata), .hl_rresp(hl_rresp), .hl_rvalid(hl_rvalid),
+        .hl_rready(hl_rready),
+`endif
         .irq(pcie_irq));
 `endif
 `else

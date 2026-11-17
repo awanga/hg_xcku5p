@@ -5,6 +5,7 @@
 # tck_ps: DDR4 clock period; the CPU runs on the controller user clock (tck/4): 750 -> 333.33 MHz (DDR4-2667), 1250 -> 200 MHz.
 # Optional: -ddr8g builds the controller for 8 Gb x16 chips (MT40A512M16HA-075E, 2 GiB) and defines DDR_8G: the DDR4 capacity test (DDRHALF register).
 # A name containing "dma" or "l2" also defines WITH_DMA in soc_top.v.
+# Optional: -nocpu builds the CPU-less variant (decision 0008, variant 3): soc_name is ignored (use nocpu), no CPU netlist; the UART2 test rig drives the buses.
 # Optional: -vpcie adds the logical PCIe root-complex window (docs/decisions/0008; netlist from gen_vpcie_soc.sh). -pcie adds the PCIe endpoint (XDMA core, window filter, registers at 0xF800A000; needs WITH_DMA) and the shared hub DMA port crossbar.
 set root [file normalize [file join [file dirname [info script]] .. ..]]
 set outdir [file normalize [lindex $argv 0]]
@@ -20,6 +21,8 @@ set ddr_part MT40A256M16GE-075E
 set ddr8g [expr {[lsearch $argv "-ddr8g"] >= 0}]
 set pcie [expr {[lsearch $argv "-pcie"] >= 0}]
 set vpcie [expr {[lsearch $argv "-vpcie"] >= 0}]
+set nocpu [expr {[lsearch $argv "-nocpu"] >= 0}]
+if {$nocpu && $vpcie} { error "-nocpu and -vpcie are different variants (docs/decisions/0008)" }
 if {$pcie && $vpcie} { error "-pcie and -vpcie are different variants (docs/decisions/0008)" }
 if {$vpcie && ![string match "*w4v" $soc]} { error "-vpcie needs the netlist with the 2 MiB peripheral region at 0xF9000000 (fpga/scripts/cpu/gen_vpcie_soc.sh, name ending w4v)" }
 if {$ddr8g} { set ddr_part MT40A512M16HA-075E }
@@ -61,6 +64,10 @@ set_property -dict [list CONFIG.PROTOCOL AXI4LITE CONFIG.NUM_SI 2 CONFIG.NUM_MI 
     CONFIG.M10_A00_BASE_ADDR 0x00000000F800E000 CONFIG.M10_A00_ADDR_WIDTH 12 \
     CONFIG.M11_A00_BASE_ADDR 0x00000000F800F000 CONFIG.M11_A00_ADDR_WIDTH 12 \
     CONFIG.M12_A00_BASE_ADDR 0x00000000F800A000 CONFIG.M12_A00_ADDR_WIDTH 12] [get_ips xbar_per]
+if {$nocpu && $pcie} {
+    # the host's BAR0 is a third master of the peripheral crossbar
+    set_property CONFIG.NUM_SI 3 [get_ips xbar_per]
+}
 if {$vpcie} {
     # logical PCIe device window (ECAM + BAR memory), 2 MiB
     set_property -dict [list CONFIG.NUM_MI 14 CONFIG.M13_A00_BASE_ADDR 0x00000000F9000000 CONFIG.M13_A00_ADDR_WIDTH 21] [get_ips xbar_per]
@@ -82,8 +89,17 @@ if {$vpcie} {
     set_property -dict [list CONFIG.PROTOCOL AXI4 CONFIG.NUM_SI 3 CONFIG.NUM_MI 1 CONFIG.ADDR_WIDTH 32 CONFIG.DATA_WIDTH 64 CONFIG.ID_WIDTH 2 \
         CONFIG.M00_A00_BASE_ADDR 0x0000000000000000 CONFIG.M00_A00_ADDR_WIDTH 32] [get_ips xbar_dma]
 }
+if {$nocpu} {
+    # CPU-less memory path (fpga/rtl/nocpu_core.v): hub DMA port 64 -> 256 bit, then a 2-slave crossbar (UART rig, DMA port) into the DDR4 controller
+    create_ip -name axi_dwidth_converter -vendor xilinx.com -library ip -module_name nc_dw
+    set_property -dict [list CONFIG.ADDR_WIDTH 32 CONFIG.SI_DATA_WIDTH 64 CONFIG.MI_DATA_WIDTH 256 CONFIG.SI_ID_WIDTH 4 CONFIG.PROTOCOL AXI4 \
+        CONFIG.ACLK_ASYNC 0] [get_ips nc_dw]
+    create_ip -name axi_crossbar -vendor xilinx.com -library ip -module_name nc_xbar
+    set_property -dict [list CONFIG.PROTOCOL AXI4 CONFIG.NUM_SI 2 CONFIG.NUM_MI 1 CONFIG.ADDR_WIDTH 32 CONFIG.DATA_WIDTH 256 CONFIG.ID_WIDTH 1 \
+        CONFIG.M00_A00_BASE_ADDR 0x0000000000000000 CONFIG.M00_A00_ADDR_WIDTH 32] [get_ips nc_xbar]
+}
 if {$pcie} {
-    if {!([string match "*dma*" $soc] || [string match "*l2*" $soc])} { error "-pcie needs a SoC netlist with the DMA port (name containing dma or l2)" }
+    if {!($nocpu || [string match "*dma*" $soc] || [string match "*l2*" $soc])} { error "-pcie needs a SoC netlist with the DMA port (name containing dma or l2)" }
     source $root/fpga/scripts/pcie/xdma_ip.tcl
     file mkdir [file join $outdir soc.srcs sources_1 ip]
     make_xdma xdma_0 [file join $outdir soc.srcs sources_1 ip] 0
@@ -98,8 +114,14 @@ generate_target all [get_ips]
 set liteeth $root/build/liteeth/gateware/liteeth_core.v
 if {![file exists $liteeth]} { error "missing $liteeth: run fpga/scripts/gen_liteeth.sh" }
 add_files [list $root/fpga/rtl/soc_top.v $root/fpga/rtl/axil_simple.v $root/fpga/rtl/boot_rom.v \
-    $root/fpga/rtl/soc_regs.v $root/fpga/rtl/spi_sifive.v $root/fpga/rtl/eth_addr_map.v $root/fpga/rtl/irq_pulse.v $root/fpga/rtl/irq_sync.v $root/fpga/rtl/gmii_rx_reg.v $root/fpga/rtl/drp_reader.v $root/fpga/rtl/ddr_halfmap.v $root/fpga/rtl/board_gpio_map.v $root/fpga/rtl/irq_hold.v $root/fpga/rtl/eth_dma.v $root/fpga/rtl/hdmi_out.v $root/fpga/rtl/hdmi_timing.v $root/fpga/rtl/hdmi_fetch.v $root/fpga/rtl/hdmi_linebuf.v $root/fpga/rtl/tmds_encoder.v $root/fpga/rtl/tmds_ser.v $root/fpga/rtl/clk_freq_meter.v $root/fpga/rtl/vexii_ram.v $root/build/soc/$soc/$soc.v \
+    $root/fpga/rtl/soc_regs.v $root/fpga/rtl/spi_sifive.v $root/fpga/rtl/eth_addr_map.v $root/fpga/rtl/irq_pulse.v $root/fpga/rtl/irq_sync.v $root/fpga/rtl/gmii_rx_reg.v $root/fpga/rtl/drp_reader.v $root/fpga/rtl/ddr_halfmap.v $root/fpga/rtl/board_gpio_map.v $root/fpga/rtl/irq_hold.v $root/fpga/rtl/eth_dma.v $root/fpga/rtl/hdmi_out.v $root/fpga/rtl/hdmi_timing.v $root/fpga/rtl/hdmi_fetch.v $root/fpga/rtl/hdmi_linebuf.v $root/fpga/rtl/tmds_encoder.v $root/fpga/rtl/tmds_ser.v $root/fpga/rtl/clk_freq_meter.v \
     $liteeth]
+if {$nocpu} {
+    add_files [list $root/fpga/rtl/nocpu_core.v $root/fpga/rtl/uart_rig.v $root/fpga/rtl/uart_rx.v $root/fpga/rtl/uart_tx.v]
+    add_files -fileset constrs_1 $root/fpga/constraints/nocpu.xdc
+} else {
+    add_files [list $root/fpga/rtl/vexii_ram.v $root/build/soc/$soc/$soc.v]
+}
 add_files -fileset constrs_1 [list $root/fpga/constraints/ddr4_pins.xdc $root/fpga/constraints/bringup_board.xdc \
     $root/fpga/constraints/soc_board.xdc]
 if {$pcie} {
@@ -112,7 +134,8 @@ if {$vpcie} {
 set defs [list SOC_MODULE=$soc]
 if {$vpcie} { lappend defs WITH_VPCIE }
 if {$pcie} { lappend defs WITH_PCIE }
-if {[string match "*dma*" $soc] || [string match "*l2*" $soc]} { lappend defs WITH_DMA }
+if {$nocpu} { lappend defs NOCPU WITH_DMA }
+if {!$nocpu && ([string match "*dma*" $soc] || [string match "*l2*" $soc])} { lappend defs WITH_DMA }
 if {$ddr8g} { lappend defs DDR_8G }
 set_property verilog_define $defs [get_filesets sources_1]
 set_property top soc_top [current_fileset]

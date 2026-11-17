@@ -1,6 +1,6 @@
 # 0008: PCIe build variants and how the endpoint is tested without a host
 
-- Status: proposed 2026-11-15; variant 2 stage 1 implemented 2026-11-15 (docs/validation/vpcie-root-complex.md) (owner request: explore an internal root complex and a CPU-less PCIe-only build; variant 2 revised to a CPU-as-root-complex design; the default stays CPU + PCIe endpoint). Nothing here changes the default build.
+- Status: proposed 2026-11-15; variant 2 stages 1 and 2 implemented and board-tested (docs/validation/vpcie-root-complex.md); variant 3 stage A (UART2 rig, no CPU) board-tested 2026-11-17, stage B (host BAR0 path) in simulation (docs/validation/pcie-only.md) (owner request: explore an internal root complex and a CPU-less PCIe-only build; variant 2 revised to a CPU-as-root-complex design; the default stays CPU + PCIe endpoint). Nothing here changes the default build.
 - Context: the board is a PCIe endpoint (edge connector, Gen3 x4, GTY quad 224, PCIE4 block X0Y0). No slot or PC is available on the bench, so the link, enumeration and host access cannot be exercised on the board today (README, owner note 2026-11-15).
 
 ## Facts established

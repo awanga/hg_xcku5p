@@ -539,5 +539,51 @@ mut_cc() { # name sed-expression
 mut_cc cc_busy "s/if (ack_s\[1\] == req) busy <= 1'b0;/if (ack_s[1] == req) busy <= 1'b1;/"
 mut_cc cc_rst "s/            q <= {W{1'b0}};//"
 mut_cc cc_noack "s/ack <= req_s\[1\];/ack <= ack;/"
+# uart_rig (UART test rig of the CPU-less variant) with uart_rx and uart_tx
+rg=$here/fpga/rtl/uart_rig.v
+rx_=$here/fpga/rtl/uart_rx.v
+tx_=$here/fpga/rtl/uart_tx.v
+tbr=$here/tests/rtl/tb_uart_rig.v
+verilator --lint-only -Wall -Wno-DECLFILENAME "$rg" "$rx_" "$tx_" >"$b/lint_rig.log" 2>&1 && echo "PASS lint uart_rig" || {
+	echo "FAIL lint uart_rig"; head "$b/lint_rig.log"; fail=1; }
+run_rg() { # name rig-file rx-file expect [iverilog args]
+	local n=$1 d=$2 r=$3 e=$4
+	shift 4
+	iverilog -g2005 "$@" -o "$b/$n.vvp" "$tbr" "$d" "$r" "$tx_" >"$b/$n.build.log" 2>&1 || { echo "FAIL $n (build)"; fail=1; return; }
+	timeout 280 vvp "$b/$n.vvp" >"$b/$n.log" 2>&1
+	grep -aq "TBRESULT.* $e\$" "$b/$n.log" && echo "PASS $n [icarus, expect $e: $(grep -a TBRESULT "$b/$n.log" | cut -d' ' -f2-3)]" || {
+		echo "FAIL $n [expected $e]"; grep -E 'TBRESULT|FAIL' "$b/$n.log" | head -3; fail=1; }
+}
+run_rg uart_rig "$rg" "$rx_" PASS
+run_rg uart_rig_slow "$rg" "$rx_" PASS -P tb_uart_rig.LAT=9
+verilator --binary --timing -Wno-fatal -Wno-DECLFILENAME --top-module tb_uart_rig --Mdir "$b/vl_rig" "$tbr" "$rg" "$rx_" "$tx_" >"$b/vl_rig.build.log" 2>&1 || {
+	echo "FAIL uart_rig (verilator build)"; fail=1; }
+timeout 280 "$b/vl_rig/Vtb_uart_rig" >"$b/vl_rig.log" 2>&1
+grep -q "TBRESULT.* PASS\$" "$b/vl_rig.log" && echo "PASS uart_rig [verilator]" || { echo "FAIL uart_rig [verilator]"; fail=1; }
+mut_rg() { # name sed-expression
+	sed "$2" "$rg" >"$b/mut_$1.v"
+	cmp -s "$rg" "$b/mut_$1.v" && { echo "FAIL mutant $1 unchanged"; fail=1; }
+	run_rg "mut_$1" "$b/mut_$1.v" "$rx_" FAIL
+}
+mut_rx() { # name sed-expression
+	sed "$2" "$rx_" >"$b/mut_$1.v"
+	cmp -s "$rx_" "$b/mut_$1.v" && { echo "FAIL mutant $1 unchanged"; fail=1; }
+	run_rg "mut_$1" "$rg" "$b/mut_$1.v" FAIL
+}
+mut_rg rg_lane "s/32'h0000000F << {addr\[4:2\], 2'b00}/32'h0000000F << {addr[3:2], 2'b00}/"
+mut_rg rg_rlane "s/m_rdata >> {addr\[4:2\], 5'd0}/m_rdata >> {3'd0, 5'd0}/"
+mut_rg rg_bresp "s/if (selm ? (m_bresp != 2'b00) : (p_bresp != 2'b00)) send_err;/if (selm ? 1'b0 : (p_bresp != 2'b00)) send_err;/"
+mut_rg rg_rresp "s/if (selm ? (m_rresp != 2'b00) : (p_rresp != 2'b00)) send_err;/if (selm ? 1'b0 : (p_rresp != 2'b00)) send_err;/"
+mut_rg rg_stride "s/wire \[31:0\] addr_n = addr + 32'd4;/wire [31:0] addr_n = addr + 32'd8;/; s/addr <= addr + 32'd4;/addr <= addr + 32'd8;/"
+mut_rg rg_digits "s/nd < 4'd8/nd < 4'd9/"
+mut_rg rg_busy "s/if (rxv \&\& !busy) begin/if (rxv) begin/"
+mut_rg rg_case "s/cmd <= (rxd >= \"a\" \&\& rxd <= \"z\") ? rxd - 8'h20 : rxd;/cmd <= rxd;/"
+mut_rg rg_win "s/if (a0\[31:30\] == 2'b01) begin aw_m <= 1'b1; w_m <= 1'b1; end/if (a0[31:30] == 2'b11) begin aw_m <= 1'b1; w_m <= 1'b1; end/"
+mut_rg rg_align "s/\"R\": if (na == 2'd1 \&\& a0\[1:0\] == 2'b00)/\"R\": if (na == 2'd1)/"
+mut_rg rg_zero "s/ \&\& a1 != 32'd0 \&\& a1 <= 32'hFFFF//"
+mut_rg rg_cross "s/selm <= (addr_n\[31:30\] == 2'b01);//"
+mut_rx rx_mid "s/cnt <= CLKS_PER_BIT \/ 2 - 1;/cnt <= CLKS_PER_BIT - 1;/"
+mut_rx rx_stop "s/valid <= rs\[1\];/valid <= 1'b1;/"
+mut_rx rx_glitch "s/else if (rs\[1\]) st <= S_IDLE;/else if (1'b0) st <= S_IDLE;/"
 [ "$fail" = 0 ] && echo "ALL PASS" || echo "FAILURES"
 exit "$fail"

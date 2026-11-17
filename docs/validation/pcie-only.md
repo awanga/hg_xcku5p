@@ -1,0 +1,16 @@
+# CPU-less variant (decision 0008, variant 3)
+
+Build: `build_soc.tcl <out> nocpu 750 build/boot_rom_sd.hex -nocpu` (add `-pcie` for the host path, see stage B). No CPU netlist, OpenSBI or Linux: `fpga/rtl/nocpu_core.v` takes the place of the SoC netlist with the same bus ports. Everything else (DDR4, peripheral crossbar and peripherals, HDMI, LiteEth, `eth_dma`) is the normal `soc_top`.
+
+## Stage A: UART2 test rig (board-tested 2026-11-17)
+- `fpga/rtl/uart_rig.v` (+ `uart_rx.v`, existing `uart_tx.v`): line protocol on UART2 (CP2105 ECI, `/dev/ttyUSB1`, 230400 8N1, pins H17 RX / G19 TX, bank 67, VADJ 1.8 V jumper): `W addr data`, `R addr`, `B addr count`, `I`, `V`; replies `OK`, 8 hex digits, `ERR`, `HGRIG1`. The header of `uart_rig.v` is the specification. Addresses 0x40000000-0x7FFFFFFF go to DDR4 (AXI4, 256-bit, single beats), everything else to the AXI4-Lite peripheral crossbar. Host tools: `tools/rig.py` (CLI and library), `tools/rig_smoke.py` (board checks).
+- Memory path: the rig and the hub DMA port (eth_dma, HDMI; 64-bit) share the DDR4 controller port through `nc_dw` (64 to 256 bit) and `nc_xbar` (2 masters, 256-bit). Without a CPU the interrupt vector is only readable with `I`.
+- Simulation: `tests/rtl/tb_uart_rig.v` (101 checks: both ports, all eight lanes, strobes, errors, bursts across the memory/peripheral boundary, malformed lines, framing error, bytes during a reply, host baud error of 3 percent; two slave latencies; Icarus and Verilator), 15 mutants caught (`tests/rtl/run.sh`, `mut_rg_*`, `mut_rx_*`). Not simulated: the IPs `nc_dw`/`nc_xbar` (only the board).
+- Build: WNS +0.266 / WHS +0.012, 16.1k LUT (`build/soc/nc2`, no timing fix needed).
+- Board: `tools/rig_smoke.py --reset build/soc/nc2/soc.bit` passed 13 of 13: identification, DDR4 status, clock register, scratch, LED, die temperature, interrupt vector, decode error then bus alive, 64 random DDR words one by one and as a burst, three far addresses, `eth_dma` copying board-register bytes to an unaligned DDR4 address (hub DMA write path through the upsizer) and the HDMI scan-out running 0.2 s without late lines or read errors (hub DMA read path).
+- Limits: a transaction a slave never answers stalls the rig until reset (no timeout); bytes sent before a reply completes are dropped; rig accesses are 32-bit single beats, so DDR4 throughput through it is serial-bound, not a bandwidth test.
+
+## Stage B: PCIe host path (`-nocpu -pcie`)
+- `pcie_ep` under `NOCPU` exports the host's BAR0 (64 KiB AXI4-Lite) as a master port; `soc_top` makes it a third master of the peripheral crossbar at 0xF8000000 + BAR0 offset (so BAR0 covers the same 64 KiB the CPU sees: UART lite, board registers, HDMI, `eth_dma`, and the endpoint's own register block at BAR0 + 0xA000 with the DMA window registers). The XDMA master (BAR1 DMA) already reaches DDR4 through the hub DMA port. The DMA window is closed at reset as in the endpoint build; the host opens it through BAR0 + 0xA070/0xA074.
+- Simulation: `tests/pcie/run_sim.sh pcie_ep_nocpu` (vendor root-port bench, xsim, wrapper with a word memory on the new port).
+- No live host exists on the bench (owner: edge connector and FMC not planned to be tested), so link, enumeration and host access remain simulation-only, as for the endpoint build.

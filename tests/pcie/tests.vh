@@ -158,3 +158,43 @@ else if (testname == "pcie_ep_dma") begin : t_dma
         $finish;
     end
 end
+`ifdef NOCPU
+else if (testname == "pcie_ep_nocpu") begin : t_nocpu
+    // CPU-less build (decision 0008, variant 3): BAR0 reaches the peripheral-bus master port of the endpoint (a word memory in the wrapper, word i = C0DE0000 + i)
+    // instead of the register block; the register block stays reachable through the CPU-side port (here the CPU agent).
+    integer errs;
+    begin
+        errs = 0;
+        board.EP.find_lite_bar;
+        board.EP.host_rd(32'h0000);
+        if (board.EP.host_rdata !== 32'hC0DE0000) begin errs = errs + 1; $display("ERROR: BAR0+0 %h != C0DE0000 (still the register block?)", board.EP.host_rdata); end
+        board.EP.host_rd(32'h0010);
+        if (board.EP.host_rdata !== 32'hC0DE0004) begin errs = errs + 1; $display("ERROR: BAR0+0x10 %h != C0DE0004", board.EP.host_rdata); end
+        if (board.EP.hl_last_ra !== 16'h0010) begin errs = errs + 1; $display("ERROR: read address at the port %h != 0010", board.EP.hl_last_ra); end
+        board.EP.host_rd(32'hA070);
+        if (board.EP.host_rdata !== 32'hC0DE0000 + 32'hA070 / 4) begin errs = errs + 1; $display("ERROR: BAR0+0xA070 %h", board.EP.host_rdata); end
+        board.EP.host_rd(32'hFFFC);
+        if (board.EP.host_rdata !== 32'hC0DE3FFF) begin errs = errs + 1; $display("ERROR: BAR0+0xFFFC %h != C0DE3FFF", board.EP.host_rdata); end
+        if (board.EP.hl_rd_n !== 4) begin errs = errs + 1; $display("ERROR: %0d reads reached the port, expected 4", board.EP.hl_rd_n); end
+
+        board.EP.host_wr(32'h2020, 32'h12345678);
+        if (board.EP.hmem[32'h2020 / 4] !== 32'h12345678) begin errs = errs + 1; $display("ERROR: write data at the port %h", board.EP.hmem[32'h2020 / 4]); end
+        if (board.EP.hl_last_wa !== 16'h2020 || board.EP.hl_last_ws !== 4'hF) begin errs = errs + 1; $display("ERROR: write address %h strobes %h", board.EP.hl_last_wa, board.EP.hl_last_ws); end
+        if (board.EP.hl_wr_n !== 1) begin errs = errs + 1; $display("ERROR: %0d writes reached the port, expected 1", board.EP.hl_wr_n); end
+        board.EP.host_rd(32'h2020);
+        if (board.EP.host_rdata !== 32'h12345678) begin errs = errs + 1; $display("ERROR: readback %h", board.EP.host_rdata); end
+        if (board.EP.hmem[32'h2024 / 4] !== 32'hC0DE0000 + 32'h2024 / 4) begin errs = errs + 1; $display("ERROR: the neighbouring word changed"); end
+
+        // the register block is reachable by the CPU side and its host side sees no traffic (host write count stays 0)
+        board.EP.cpu_read(7'h00);
+        if (board.EP.cpu_rdata !== 32'h50434901) begin errs = errs + 1; $display("ERROR: cpu ID %h", board.EP.cpu_rdata); end
+        board.EP.cpu_read(7'h14);
+        if (board.EP.cpu_rdata !== 32'd0) begin errs = errs + 1; $display("ERROR: host write count %0d != 0", board.EP.cpu_rdata); end
+
+        if (errs == 0) $display("[%t] pcie_ep_nocpu: Test Completed Successfully", $realtime);
+        else $display("[%t] pcie_ep_nocpu: TEST FAILED, %0d errors", $realtime, errs);
+        #1000;
+        $finish;
+    end
+end
+`endif

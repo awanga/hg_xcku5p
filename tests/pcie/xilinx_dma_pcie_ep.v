@@ -86,6 +86,44 @@ module xilinx_dma_pcie_ep #(
     wire [31:0] c_rdata;
     wire        irq;
 
+`ifdef NOCPU
+    // CPU-less build: the host's BAR0 is an AXI4-Lite master port (per_clk) onto the peripheral crossbar; here a 64 KiB word memory stands in for it
+    // (word i holds C0DE0000 + i, so a read shows which address reached the port); the last write address, strobes and counts are recorded.
+    wire [15:0] hl_awaddr, hl_araddr;
+    wire [31:0] hl_wdata;
+    wire [3:0]  hl_wstrb;
+    wire        hl_awvalid, hl_wvalid, hl_bready, hl_arvalid, hl_rready;
+    reg         hl_awready = 1'b0, hl_wready = 1'b0, hl_bvalid = 1'b0, hl_arready = 1'b0, hl_rvalid = 1'b0;
+    wire [1:0]  hl_bresp = 2'b00, hl_rresp = 2'b00;
+    reg  [31:0] hl_rdata = 32'd0;
+    reg  [31:0] hmem [0:16383];
+    integer     hl_wr_n = 0, hl_rd_n = 0, hi;
+    reg  [15:0] hl_last_wa = 16'd0, hl_last_ra = 16'd0;
+    reg  [3:0]  hl_last_ws = 4'd0;
+    reg         hl_aws = 1'b0, hl_ws = 1'b0;
+    reg  [15:0] hl_a = 16'd0;
+    reg  [31:0] hl_d = 32'd0;
+    reg  [3:0]  hl_s = 4'd0;
+    initial for (hi = 0; hi < 16384; hi = hi + 1) hmem[hi] = 32'hC0DE0000 + hi;
+    always @(posedge per_clk) begin
+        hl_awready <= hl_awvalid && !hl_awready && !hl_aws;
+        hl_wready <= hl_wvalid && !hl_wready && !hl_ws;
+        if (hl_awvalid && hl_awready) begin hl_a <= hl_awaddr; hl_aws <= 1'b1; hl_last_wa <= hl_awaddr; end
+        if (hl_wvalid && hl_wready) begin hl_d <= hl_wdata; hl_s <= hl_wstrb; hl_ws <= 1'b1; hl_last_ws <= hl_wstrb; end
+        if (hl_aws && hl_ws && !hl_bvalid) begin
+            if (hl_s[0]) hmem[hl_a[15:2]][7:0] <= hl_d[7:0];
+            if (hl_s[1]) hmem[hl_a[15:2]][15:8] <= hl_d[15:8];
+            if (hl_s[2]) hmem[hl_a[15:2]][23:16] <= hl_d[23:16];
+            if (hl_s[3]) hmem[hl_a[15:2]][31:24] <= hl_d[31:24];
+            hl_bvalid <= 1'b1; hl_aws <= 1'b0; hl_ws <= 1'b0; hl_wr_n <= hl_wr_n + 1;
+        end
+        if (hl_bvalid && hl_bready) hl_bvalid <= 1'b0;
+        hl_arready <= hl_arvalid && !hl_arready && !hl_rvalid;
+        if (hl_arvalid && hl_arready) begin hl_rdata <= hmem[hl_araddr[15:2]]; hl_rvalid <= 1'b1; hl_last_ra <= hl_araddr; hl_rd_n <= hl_rd_n + 1; end
+        if (hl_rvalid && hl_rready) hl_rvalid <= 1'b0;
+    end
+`endif
+
     pcie_ep u_ep (
         .sys_clk_p(sys_clk_p), .sys_clk_n(sys_clk_n), .sys_rst_n(sys_rst_n),
         .pci_exp_txp(pci_exp_txp), .pci_exp_txn(pci_exp_txn), .pci_exp_rxp(pci_exp_rxp), .pci_exp_rxn(pci_exp_rxn),
@@ -132,6 +170,12 @@ module xilinx_dma_pcie_ep #(
         .c_awaddr(c_awaddr), .c_awvalid(c_awvalid), .c_awready(c_awready), .c_wdata(c_wdata), .c_wstrb(4'hF), .c_wvalid(c_wvalid),
         .c_wready(c_wready), .c_bresp(c_bresp), .c_bvalid(c_bvalid), .c_bready(c_bready),
         .c_araddr(c_araddr), .c_arvalid(c_arvalid), .c_arready(c_arready), .c_rdata(c_rdata), .c_rresp(c_rresp), .c_rvalid(c_rvalid),
+`ifdef NOCPU
+        .hl_awaddr(hl_awaddr), .hl_awvalid(hl_awvalid), .hl_awready(hl_awready), .hl_wdata(hl_wdata), .hl_wstrb(hl_wstrb), .hl_wvalid(hl_wvalid),
+        .hl_wready(hl_wready), .hl_bresp(hl_bresp), .hl_bvalid(hl_bvalid), .hl_bready(hl_bready),
+        .hl_araddr(hl_araddr), .hl_arvalid(hl_arvalid), .hl_arready(hl_arready), .hl_rdata(hl_rdata), .hl_rresp(hl_rresp), .hl_rvalid(hl_rvalid),
+        .hl_rready(hl_rready),
+`endif
         .c_rready(c_rready), .irq(irq));
 
     // ---------------------------------------------------------------- the SoC memory: 64 KiB, one burst at a time, deterministic stalls

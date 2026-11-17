@@ -29,8 +29,11 @@ foreach f {pcie_4_0_rp sys_clk_gen sys_clk_gen_ds usp_pci_exp_usrapp_cfg usp_pci
 }
 add_files -fileset sim_1 -norecurse $bench
 foreach h {board_common.vh pci_exp_expect_tasks.vh sample_tests.vh tests.vh} { add_files -fileset sim_1 -norecurse $simdir/tb/$h }
-set_property verilog_define {PCIE_SIM_PIPE} [get_filesets sources_1]
-set_property verilog_define {PCIE_SIM_PIPE} [get_filesets sim_1]
+# PCIE_NOCPU=1: the CPU-less build's pcie_ep (BAR0 as a peripheral-bus master port; test pcie_ep_nocpu)
+set defs {PCIE_SIM_PIPE}
+if {[info exists ::env(PCIE_NOCPU)]} { lappend defs NOCPU }
+set_property verilog_define $defs [get_filesets sources_1]
+set_property verilog_define $defs [get_filesets sim_1]
 set_property include_dirs [list $simdir/tb] [get_filesets sim_1]
 set_property top board [get_filesets sim_1]
 set_property -name {xsim.simulate.runtime} -value {all} -objects [get_filesets sim_1]
