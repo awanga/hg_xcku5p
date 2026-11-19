@@ -88,12 +88,13 @@ create_ip -name axi_iic -vendor xilinx.com -library ip -module_name iic_0
 set_property -dict [list CONFIG.AXI_ACLK_FREQ_MHZ 100 CONFIG.IIC_FREQ_KHZ 100] [get_ips iic_0]
 }
 if {$card} {
-    # register crossbar of the card: SI0 = UART rig (through cc_per), SI1 = host BAR0; MI0 card_regs, MI1 user_regs, MI2 pcie_regs (4 KiB each)
+    # register crossbar of the card: SI0 = UART rig (through cc_per), SI1 = host BAR0; MI0 card_regs, MI1 user_regs, MI2 pcie_regs (4 KiB each), MI3 user_ip (16 KiB)
     create_ip -name axi_crossbar -vendor xilinx.com -library ip -module_name xbar_card
-    set_property -dict [list CONFIG.PROTOCOL AXI4LITE CONFIG.NUM_SI 2 CONFIG.NUM_MI 3 CONFIG.ADDR_WIDTH 32 CONFIG.DATA_WIDTH 32 \
+    set_property -dict [list CONFIG.PROTOCOL AXI4LITE CONFIG.NUM_SI 2 CONFIG.NUM_MI 4 CONFIG.ADDR_WIDTH 32 CONFIG.DATA_WIDTH 32 \
         CONFIG.M00_A00_BASE_ADDR 0x00000000F8001000 CONFIG.M00_A00_ADDR_WIDTH 12 \
         CONFIG.M01_A00_BASE_ADDR 0x00000000F8002000 CONFIG.M01_A00_ADDR_WIDTH 12 \
-        CONFIG.M02_A00_BASE_ADDR 0x00000000F800A000 CONFIG.M02_A00_ADDR_WIDTH 12] [get_ips xbar_card]
+        CONFIG.M02_A00_BASE_ADDR 0x00000000F800A000 CONFIG.M02_A00_ADDR_WIDTH 12 \
+        CONFIG.M03_A00_BASE_ADDR 0x00000000F8004000 CONFIG.M03_A00_ADDR_WIDTH 14] [get_ips xbar_card]
 }
 if {$vpcie} {
     # the DMA engine's clock converter (per_clk -> CPU clock) and the shared hub DMA port crossbar (SI2 = the engine)
@@ -135,7 +136,7 @@ if {$pcie} {
 set liteeth $root/build/liteeth/gateware/liteeth_core.v
 if {!$card && ![file exists $liteeth]} { error "missing $liteeth: run fpga/scripts/gen_liteeth.sh" }
 if {$card} {
-    add_files [list $root/fpga/rtl/card_top.v $root/fpga/rtl/card_regs.v $root/fpga/rtl/user_regs.v $root/fpga/rtl/axil_simple.v $root/fpga/rtl/irq_sync.v]
+    add_files [list $root/fpga/rtl/card_top.v $root/fpga/rtl/card_regs.v $root/fpga/rtl/user_regs.v $root/fpga/rtl/user_ip.v $root/fpga/rtl/axil_simple.v $root/fpga/rtl/irq_sync.v]
 } else {
 add_files [list $root/fpga/rtl/soc_top.v $root/fpga/rtl/axil_simple.v $root/fpga/rtl/boot_rom.v \
     $root/fpga/rtl/soc_regs.v $root/fpga/rtl/spi_sifive.v $root/fpga/rtl/eth_addr_map.v $root/fpga/rtl/irq_pulse.v $root/fpga/rtl/irq_sync.v $root/fpga/rtl/gmii_rx_reg.v $root/fpga/rtl/drp_reader.v $root/fpga/rtl/ddr_halfmap.v $root/fpga/rtl/board_gpio_map.v $root/fpga/rtl/irq_hold.v $root/fpga/rtl/eth_dma.v $root/fpga/rtl/hdmi_out.v $root/fpga/rtl/hdmi_timing.v $root/fpga/rtl/hdmi_fetch.v $root/fpga/rtl/hdmi_linebuf.v $root/fpga/rtl/tmds_encoder.v $root/fpga/rtl/tmds_ser.v $root/fpga/rtl/clk_freq_meter.v \

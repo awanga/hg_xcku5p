@@ -9,7 +9,8 @@
 //   0x1000 card_regs   identity, build, status, scratch, LED (fpga/rtl/card_regs.v)
 //   0x2000 user_regs   hook window for future firmware functions (fpga/rtl/user_regs.v)
 //   0xA000 pcie_regs   mailbox, doorbells, DMA window (same block as the CPU builds)
-//   0x3000..0x9FFF, 0xB000..0xFFFF reserved
+//   0x4000 user_ip     16 KiB window for a future function block (fpga/rtl/user_ip.v; reads 0 until an IP replaces it)
+//   0x3000, 0x5000..0x9FFF, 0xB000..0xFFFF reserved
 // DMA: the XDMA master reaches DDR4 (0x40000000, 1 GiB) through the window of pcie_regs, closed at reset; the host or the rig opens it (BAR0 + 0xA070/0xA074).
 module card_top #(
     parameter [31:0] CARD_VERSION = 32'd0,
@@ -232,13 +233,13 @@ module card_top #(
     wire [1:0]  hl_bresp, hl_rresp;
     wire        hl_awvalid, hl_awready, hl_wvalid, hl_wready, hl_bvalid, hl_bready, hl_arvalid, hl_arready, hl_rvalid, hl_rready;
 
-    // crossbar slaves: 0 card_regs 0xF8001000, 1 user_regs 0xF8002000, 2 pcie_regs 0xF800A000 (4 KiB each); SI0 = rig, SI1 = host BAR0
-    wire [95:0] x_awaddr, x_araddr, x_wdata, x_rdata;
-    wire [8:0]  x_awprot, x_arprot;
-    wire [11:0] x_wstrb;
-    wire [5:0]  x_bresp, x_rresp;
-    wire [2:0]  x_awvalid, x_awready, x_wvalid, x_wready, x_bvalid, x_bready;
-    wire [2:0]  x_arvalid, x_arready, x_rvalid, x_rready;
+    // crossbar slaves: 0 card_regs 0xF8001000, 1 user_regs 0xF8002000, 2 pcie_regs 0xF800A000 (4 KiB each), 3 user_ip 0xF8004000 (16 KiB); SI0 = rig, SI1 = host BAR0
+    wire [127:0] x_awaddr, x_araddr, x_wdata, x_rdata;
+    wire [11:0] x_awprot, x_arprot;
+    wire [15:0] x_wstrb;
+    wire [7:0]  x_bresp, x_rresp;
+    wire [3:0]  x_awvalid, x_awready, x_wvalid, x_wready, x_bvalid, x_bready;
+    wire [3:0]  x_arvalid, x_arready, x_rvalid, x_rready;
     wire [1:0]  xs_awready, xs_wready, xs_bvalid, xs_arready, xs_rvalid;
     wire [3:0]  xs_bresp, xs_rresp;
     wire [63:0] xs_rdata;
@@ -297,6 +298,15 @@ module card_top #(
         .s_araddr(x_araddr[43:32]), .s_arvalid(x_arvalid[1]), .s_arready(x_arready[1]),
         .s_rdata(x_rdata[63:32]), .s_rresp(x_rresp[3:2]), .s_rvalid(x_rvalid[1]), .s_rready(x_rready[1]),
         .ctl(user_ctl), .sts(512'd0), .kick(user_kick), .event_in(32'd0), .irq(user_irq));
+
+    // Window for a future function block: replace user_ip with the new IP's register interface (BAR0 + 0x4000, 16 KiB).
+    user_ip u_uip (
+        .clk(per_clk), .rst_n(per_rst_n),
+        .s_awaddr(x_awaddr[109:96]), .s_awvalid(x_awvalid[3]), .s_awready(x_awready[3]),
+        .s_wdata(x_wdata[127:96]), .s_wstrb(x_wstrb[15:12]), .s_wvalid(x_wvalid[3]), .s_wready(x_wready[3]),
+        .s_bresp(x_bresp[7:6]), .s_bvalid(x_bvalid[3]), .s_bready(x_bready[3]),
+        .s_araddr(x_araddr[109:96]), .s_arvalid(x_arvalid[3]), .s_arready(x_arready[3]),
+        .s_rdata(x_rdata[127:96]), .s_rresp(x_rresp[7:6]), .s_rvalid(x_rvalid[3]), .s_rready(x_rready[3]));
 
     // ---------------------------------------------------------------- PCIe endpoint: the XDMA master goes straight to the hub DMA port of nocpu_core
     pcie_ep u_pcie (

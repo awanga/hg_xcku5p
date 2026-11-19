@@ -58,6 +58,41 @@ module tb_card;
         end
     endtask
 
+    // ------------------------------------------------------------ user_ip (placeholder window: reads 0, writes ignored, always OKAY)
+    reg  [13:0] i_aw = 0, i_ar = 0;
+    reg  [31:0] i_wd = 0;
+    reg         i_awv = 0, i_wv = 0, i_bready = 0, i_arv = 0, i_rready = 0;
+    wire        i_awr, i_wr, i_bv, i_arr, i_rv;
+    wire [1:0]  i_br, i_rr;
+    wire [31:0] i_rd;
+    user_ip di (
+        .clk(clk), .rst_n(rst_n),
+        .s_awaddr(i_aw), .s_awvalid(i_awv), .s_awready(i_awr), .s_wdata(i_wd), .s_wstrb(4'hF), .s_wvalid(i_wv), .s_wready(i_wr),
+        .s_bresp(i_br), .s_bvalid(i_bv), .s_bready(i_bready),
+        .s_araddr(i_ar), .s_arvalid(i_arv), .s_arready(i_arr), .s_rdata(i_rd), .s_rresp(i_rr), .s_rvalid(i_rv), .s_rready(i_rready));
+    task iw(input [13:0] a, input [31:0] d);
+        begin
+            @(negedge clk); i_aw = a; i_wd = d; i_awv = 1; i_wv = 1; #1;
+            while (!i_awr) begin @(negedge clk); #1; end
+            @(posedge clk); @(negedge clk); i_awv = 0; i_wv = 0; i_bready = 1; #1;
+            while (!i_bv) begin @(negedge clk); #1; end
+            chk({30'd0, i_br}, 0, "ip bresp");
+            @(posedge clk); @(negedge clk); i_bready = 0;
+        end
+    endtask
+    reg [31:0] iq;
+    task ir(input [13:0] a);
+        begin
+            @(negedge clk); i_ar = a; i_arv = 1; #1;
+            while (!i_arr) begin @(negedge clk); #1; end
+            @(posedge clk); @(negedge clk); i_arv = 0; i_rready = 1; #1;
+            while (!i_rv) begin @(negedge clk); #1; end
+            iq = i_rd;
+            chk({30'd0, i_rr}, 0, "ip rresp");
+            @(posedge clk); @(negedge clk); i_rready = 0;
+        end
+    endtask
+
     // ------------------------------------------------------------ user_regs
     reg  [11:0] u_aw = 0, u_ar = 0;
     reg  [31:0] u_wd = 0;
@@ -225,6 +260,12 @@ module tb_card;
         rst_n = 0; repeat (3) @(negedge clk); rst_n = 1;
         ur(12'h008); chk(uq, 0, "CTL after reset");
         ur(12'h088); chk(uq, 0, "IEN after reset");
+
+        // user_ip: reads 0 over the whole 16 KiB window, writes are ignored (also the first and last word), responses OKAY
+        ir(14'h0000); chk(iq, 0, "ip word 0");
+        iw(14'h0000, 32'hFFFFFFFF); ir(14'h0000); chk(iq, 0, "ip word 0 after write");
+        iw(14'h3FFC, 32'h12345678); ir(14'h3FFC); chk(iq, 0, "ip last word after write");
+        iw(14'h0010, 32'hA5A5A5A5); ir(14'h0010); chk(iq, 0, "ip word 4 after write");
 
         $display("TBRESULT checks=%0d errors=%0d %s", checks, errors, (checks > 0 && errors == 0) ? "PASS" : "FAIL");
         $finish;
