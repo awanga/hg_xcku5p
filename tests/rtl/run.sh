@@ -585,5 +585,40 @@ mut_rg rg_cross "s/selm <= (addr_n\[31:30\] == 2'b01);//"
 mut_rx rx_mid "s/cnt <= CLKS_PER_BIT \/ 2 - 1;/cnt <= CLKS_PER_BIT - 1;/"
 mut_rx rx_stop "s/valid <= rs\[1\];/valid <= 1'b1;/"
 mut_rx rx_glitch "s/else if (rs\[1\]) st <= S_IDLE;/else if (1'b0) st <= S_IDLE;/"
+
+# ---- card_regs / user_regs (CPU-less PCIe card register blocks)
+cr_=$here/fpga/rtl/card_regs.v
+ur_=$here/fpga/rtl/user_regs.v
+tbc=$here/tests/rtl/tb_card.v
+run_cd() { # name card_regs.v user_regs.v expect
+	iverilog -g2005 -o "$b/$1.vvp" "$tbc" "$2" "$3" "$ai" >"$b/$1.build.log" 2>&1 || { echo "FAIL $1 (build)"; fail=1; return; }
+	timeout 120 vvp "$b/$1.vvp" >"$b/$1.log" 2>&1
+	grep -aq "TBRESULT.* $4\$" "$b/$1.log" && echo "PASS $1 [icarus, expect $4: $(grep -a TBRESULT "$b/$1.log" | cut -d' ' -f2-3)]" || {
+		echo "FAIL $1 [expected $4]"; grep -aE 'TBRESULT|MISMATCH' "$b/$1.log" | head -3; fail=1; }
+}
+verilator --lint-only -Wall -Wno-DECLFILENAME -Wno-MULTITOP "$cr_" "$ur_" "$ai" >"$b/lint_card.log" 2>&1 && echo "PASS lint card" || {
+	echo "FAIL lint card"; head "$b/lint_card.log"; fail=1; }
+verilator --binary --timing -Wno-fatal -Wno-DECLFILENAME --top-module tb_card --Mdir "$b/vl_card" "$tbc" "$cr_" "$ur_" "$ai" >"$b/vl_card.build.log" 2>&1 &&
+	"$b/vl_card/Vtb_card" >"$b/vl_card.log" 2>&1
+grep -aq "TBRESULT.* PASS\$" "$b/vl_card.log" && echo "PASS card [verilator]" || { echo "FAIL card [verilator]"; fail=1; }
+run_cd card "$cr_" "$ur_" PASS
+mut_cd() { # name file(card|user) sed-expression
+	local f=$cr_; [ "$2" = user ] && f=$ur_
+	sed "$3" "$f" >"$b/mut_$1.v"
+	cmp -s "$f" "$b/mut_$1.v" && { echo "FAIL mutant $1 unchanged"; fail=1; return; }
+	if [ "$2" = user ]; then run_cd "mut_$1" "$cr_" "$b/mut_$1.v" FAIL; else run_cd "mut_$1" "$b/mut_$1.v" "$ur_" FAIL; fi
+}
+mut_cd cd_ro card "s/10'h0B) begin/10'h0B || addr[11:2] == 10'h00) begin/"
+mut_cd cd_strb card "s/if (wstrb\[1\]) scratch\[15:8\] <= wdata\[15:8\];/scratch[15:8] <= wdata[15:8];/"
+mut_cd cd_sync card "s/10'h08: rdata <= {30'd0, key_s\[1\], calib_s\[1\]};/10'h08: rdata <= {30'd0, calib_s[1], key_s[1]};/"
+mut_cd cd_sec card "s/tick == CLK_HZ - 32'd1/tick == CLK_HZ/"
+mut_cd cd_led card "s/10'h0C \&\& wstrb\[0\]) led_q/10'h0C) led_q/"
+mut_cd cd_rst card "s/            scratch <= 32'd0;/            scratch <= scratch;/"
+mut_cd ud_kick user "s/^        kick <= 32'd0;//"
+mut_cd ud_w1c user "s/events <= (events | event_in) \& ~wdata;/events <= wdata;/"
+mut_cd ud_sts user "s/rdata <= sts\[32\*addr\[5:2\] +: 32\];/rdata <= sts[32*addr[4:1] +: 32];/"
+mut_cd ud_irq user "s/assign irq = |(events \& ien);/assign irq = |events;/"
+mut_cd ud_ctl user "s/if (wstrb\[i\]) ctl_q/ctl_q/"
+mut_cd ud_decode user "s/if (w < 10'd16) begin/if (w < 10'd17) begin/"
 [ "$fail" = 0 ] && echo "ALL PASS" || echo "FAILURES"
 exit "$fail"
