@@ -7,6 +7,7 @@
 Library: Rig(port).read(addr), .write(addr, data), .burst(addr, n), .irq(), .ident(). A bus error on the card raises RigError.
 Addresses 0x40000000-0x7FFFFFFF are DDR4, everything else is the peripheral bus (docs/validation/soc-minimal.md, tests/dts/xbar_map.csv).
 """
+
 import argparse
 import sys
 import time
@@ -74,7 +75,9 @@ class Rig:
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("-p", "--port", default="/dev/ttyUSB1")
     ap.add_argument("cmd", choices=["V", "I", "R", "W", "B"])
     ap.add_argument("args", nargs="*")
