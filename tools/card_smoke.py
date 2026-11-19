@@ -151,6 +151,22 @@ def main():
 
     check("user_events", "event/enable words (no event source connected)", user_events)
 
+    IP = 0xF8004000
+
+    def user_ip():
+        for a in (IP, IP + 4, IP + 0x3FFC):
+            if rig.read(a) != 0:
+                return False, hex(a)
+        rig.write(IP, 0xFFFFFFFF)
+        rig.write(IP + 0x3FFC, 0x12345678)
+        return rig.read(IP) == 0 and rig.read(IP + 0x3FFC) == 0, None
+
+    check(
+        "user_ip",
+        "user_ip window 0xF8004000..0xF8007FFF reads 0 and ignores writes (no IP attached)",
+        user_ip,
+    )
+
     check(
         "pcie_regs",
         "pcie_regs ID 0x50434901 at 0xF800A000 (the host sees it at BAR0 + 0xA000)",
@@ -198,8 +214,8 @@ def main():
 
     check(
         "decode_error",
-        "unmapped words (0xF8003000, 0xF800B000) answer a bus error and the bus keeps working",
-        lambda: (hole(0xF8003000) and hole(0xF800B000), None),
+        "unmapped words (0xF8003000, 0xF8008000, 0xF800B000) answer a bus error and the bus keeps working",
+        lambda: (hole(0xF8003000) and hole(0xF8008000) and hole(0xF800B000), None),
     )
 
     random.seed(2)
