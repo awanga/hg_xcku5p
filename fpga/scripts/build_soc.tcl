@@ -6,6 +6,7 @@
 # Optional: -ddr8g builds the controller for 8 Gb x16 chips (MT40A512M16HA-075E, 2 GiB) and defines DDR_8G: the DDR4 capacity test (DDRHALF register).
 # A name containing "dma" or "l2" also defines WITH_DMA in soc_top.v.
 # Optional: -nocpu builds the CPU-less variant (decision 0008, variant 3): soc_name is ignored (use nocpu), no CPU netlist; the UART2 test rig drives the buses.
+# Optional: -card builds the lean CPU-less PCIe card (fpga/rtl/card_top.v): DDR4 + PCIe endpoint + UART2 rig + card_regs/user_regs, no other peripherals (implies -nocpu -pcie).
 # Optional: -vpcie adds the logical PCIe root-complex window (docs/decisions/0008; netlist from gen_vpcie_soc.sh). -pcie adds the PCIe endpoint (XDMA core, window filter, registers at 0xF800A000; needs WITH_DMA) and the shared hub DMA port crossbar.
 set root [file normalize [file join [file dirname [info script]] .. ..]]
 set outdir [file normalize [lindex $argv 0]]
@@ -21,7 +22,10 @@ set ddr_part MT40A256M16GE-075E
 set ddr8g [expr {[lsearch $argv "-ddr8g"] >= 0}]
 set pcie [expr {[lsearch $argv "-pcie"] >= 0}]
 set vpcie [expr {[lsearch $argv "-vpcie"] >= 0}]
-set nocpu [expr {[lsearch $argv "-nocpu"] >= 0}]
+set card [expr {[lsearch $argv "-card"] >= 0}]
+set nocpu [expr {[lsearch $argv "-nocpu"] >= 0 || $card}]
+if {$card} { set pcie 1 }
+if {$card && $vpcie} { error "-card and -vpcie are different variants (docs/decisions/0008)" }
 if {$nocpu && $vpcie} { error "-nocpu and -vpcie are different variants (docs/decisions/0008)" }
 if {$pcie && $vpcie} { error "-pcie and -vpcie are different variants (docs/decisions/0008)" }
 if {$vpcie && ![string match "*w4v" $soc]} { error "-vpcie needs the netlist with the 2 MiB peripheral region at 0xF9000000 (fpga/scripts/cpu/gen_vpcie_soc.sh, name ending w4v)" }
@@ -42,6 +46,7 @@ set_property -dict [list \
     CONFIG.C0.DDR4_EN_PARITY false] [get_ips ddr4_0]
 create_ip -name axi_clock_converter -vendor xilinx.com -library ip -module_name cc_per
 set_property -dict [list CONFIG.PROTOCOL AXI4LITE CONFIG.DATA_WIDTH 32 CONFIG.ADDR_WIDTH 32 CONFIG.ACLK_ASYNC 1] [get_ips cc_per]
+if {!$card} {
 create_ip -name axi_clock_converter -vendor xilinx.com -library ip -module_name cc_dma
 set_property -dict [list CONFIG.PROTOCOL AXI4 CONFIG.DATA_WIDTH 64 CONFIG.ADDR_WIDTH 32 CONFIG.ID_WIDTH 4 CONFIG.ACLK_ASYNC 1 \
     CONFIG.READ_WRITE_MODE WRITE_ONLY] [get_ips cc_dma]
@@ -81,6 +86,15 @@ set_property -dict [list CONFIG.C_GPIO_WIDTH 19 CONFIG.C_ALL_INPUTS 0 CONFIG.C_A
 create_ip -name axi_timer -vendor xilinx.com -library ip -module_name tmr_0
 create_ip -name axi_iic -vendor xilinx.com -library ip -module_name iic_0
 set_property -dict [list CONFIG.AXI_ACLK_FREQ_MHZ 100 CONFIG.IIC_FREQ_KHZ 100] [get_ips iic_0]
+}
+if {$card} {
+    # register crossbar of the card: SI0 = UART rig (through cc_per), SI1 = host BAR0; MI0 card_regs, MI1 user_regs, MI2 pcie_regs (4 KiB each)
+    create_ip -name axi_crossbar -vendor xilinx.com -library ip -module_name xbar_card
+    set_property -dict [list CONFIG.PROTOCOL AXI4LITE CONFIG.NUM_SI 2 CONFIG.NUM_MI 3 CONFIG.ADDR_WIDTH 32 CONFIG.DATA_WIDTH 32 \
+        CONFIG.M00_A00_BASE_ADDR 0x00000000F8001000 CONFIG.M00_A00_ADDR_WIDTH 12 \
+        CONFIG.M01_A00_BASE_ADDR 0x00000000F8002000 CONFIG.M01_A00_ADDR_WIDTH 12 \
+        CONFIG.M02_A00_BASE_ADDR 0x00000000F800A000 CONFIG.M02_A00_ADDR_WIDTH 12] [get_ips xbar_card]
+}
 if {$vpcie} {
     # the DMA engine's clock converter (per_clk -> CPU clock) and the shared hub DMA port crossbar (SI2 = the engine)
     create_ip -name axi_clock_converter -vendor xilinx.com -library ip -module_name vdma_cc
@@ -105,25 +119,40 @@ if {$pcie} {
     make_xdma xdma_0 [file join $outdir soc.srcs sources_1 ip] 0
     make_pcie_converters
     # shared hub DMA port: SI0 eth_dma (writes), SI1 HDMI (reads), SI2 PCIe; one 64-bit slave covering the whole address space
-    create_ip -name axi_crossbar -vendor xilinx.com -library ip -module_name xbar_dma
-    set_property -dict [list CONFIG.PROTOCOL AXI4 CONFIG.NUM_SI 3 CONFIG.NUM_MI 1 CONFIG.ADDR_WIDTH 32 CONFIG.DATA_WIDTH 64 CONFIG.ID_WIDTH 2 \
-        CONFIG.M00_A00_BASE_ADDR 0x0000000000000000 CONFIG.M00_A00_ADDR_WIDTH 32] [get_ips xbar_dma]
+    if {!$card} {
+        create_ip -name axi_crossbar -vendor xilinx.com -library ip -module_name xbar_dma
+        set_property -dict [list CONFIG.PROTOCOL AXI4 CONFIG.NUM_SI 3 CONFIG.NUM_MI 1 CONFIG.ADDR_WIDTH 32 CONFIG.DATA_WIDTH 64 CONFIG.ID_WIDTH 2 \
+            CONFIG.M00_A00_BASE_ADDR 0x0000000000000000 CONFIG.M00_A00_ADDR_WIDTH 32] [get_ips xbar_dma]
+    }
 }
 generate_target all [get_ips]
+if {$pcie} {
+    # the PCIe core must carry the identity of fpga/pcie_identity.cfg (what the host enumerates after a flash boot)
+    if {[catch {exec python3 $root/tools/pcie_identity.py check-ip $outdir/soc.gen/sources_1/ip} idout]} { error "PCIe identity check failed:\n$idout" }
+    puts "PCIE_IDENTITY $idout"
+}
 
 set liteeth $root/build/liteeth/gateware/liteeth_core.v
-if {![file exists $liteeth]} { error "missing $liteeth: run fpga/scripts/gen_liteeth.sh" }
+if {!$card && ![file exists $liteeth]} { error "missing $liteeth: run fpga/scripts/gen_liteeth.sh" }
+if {$card} {
+    add_files [list $root/fpga/rtl/card_top.v $root/fpga/rtl/card_regs.v $root/fpga/rtl/user_regs.v $root/fpga/rtl/axil_simple.v $root/fpga/rtl/irq_sync.v]
+} else {
 add_files [list $root/fpga/rtl/soc_top.v $root/fpga/rtl/axil_simple.v $root/fpga/rtl/boot_rom.v \
     $root/fpga/rtl/soc_regs.v $root/fpga/rtl/spi_sifive.v $root/fpga/rtl/eth_addr_map.v $root/fpga/rtl/irq_pulse.v $root/fpga/rtl/irq_sync.v $root/fpga/rtl/gmii_rx_reg.v $root/fpga/rtl/drp_reader.v $root/fpga/rtl/ddr_halfmap.v $root/fpga/rtl/board_gpio_map.v $root/fpga/rtl/irq_hold.v $root/fpga/rtl/eth_dma.v $root/fpga/rtl/hdmi_out.v $root/fpga/rtl/hdmi_timing.v $root/fpga/rtl/hdmi_fetch.v $root/fpga/rtl/hdmi_linebuf.v $root/fpga/rtl/tmds_encoder.v $root/fpga/rtl/tmds_ser.v $root/fpga/rtl/clk_freq_meter.v \
     $liteeth]
+}
 if {$nocpu} {
     add_files [list $root/fpga/rtl/nocpu_core.v $root/fpga/rtl/uart_rig.v $root/fpga/rtl/uart_rx.v $root/fpga/rtl/uart_tx.v]
     add_files -fileset constrs_1 $root/fpga/constraints/nocpu.xdc
 } else {
     add_files [list $root/fpga/rtl/vexii_ram.v $root/build/soc/$soc/$soc.v]
 }
-add_files -fileset constrs_1 [list $root/fpga/constraints/ddr4_pins.xdc $root/fpga/constraints/bringup_board.xdc \
-    $root/fpga/constraints/soc_board.xdc]
+if {$card} {
+    add_files -fileset constrs_1 [list $root/fpga/constraints/ddr4_pins.xdc $root/fpga/constraints/card_board.xdc]
+} else {
+    add_files -fileset constrs_1 [list $root/fpga/constraints/ddr4_pins.xdc $root/fpga/constraints/bringup_board.xdc \
+        $root/fpga/constraints/soc_board.xdc]
+}
 if {$pcie} {
     add_files [list $root/fpga/rtl/pcie_ep.v $root/fpga/rtl/pcie_regs.v $root/fpga/rtl/axi_win.v $root/fpga/rtl/cdc_cfg.v]
     add_files -fileset constrs_1 $root/fpga/constraints/pcie.xdc
@@ -135,11 +164,23 @@ set defs [list SOC_MODULE=$soc]
 if {$vpcie} { lappend defs WITH_VPCIE }
 if {$pcie} { lappend defs WITH_PCIE }
 if {$nocpu} { lappend defs NOCPU WITH_DMA }
+if {$card} { lappend defs CARD }
 if {!$nocpu && ([string match "*dma*" $soc] || [string match "*l2*" $soc])} { lappend defs WITH_DMA }
 if {$ddr8g} { lappend defs DDR_8G }
 set_property verilog_define $defs [get_filesets sources_1]
+if {$card} {
+    # version and commit id from the source tree; identity words from the manifest
+    set fh [open $root/VERSION r]; set ver [string trim [read $fh]]; close $fh
+    lassign [split $ver .] vmaj vmin vpat
+    set build 0
+    catch {set build [expr {"0x[exec git -C $root rev-parse --short=8 HEAD]"}]}
+    set idg [exec python3 $root/tools/pcie_identity.py generics]
+    set_property top card_top [current_fileset]
+    set_property generic [concat [list CARD_VERSION=32'h[format %08X [expr {($vmaj << 16) | ($vmin << 8) | $vpat}]] CARD_BUILD=32'h[format %08X $build]] $idg] [current_fileset]
+} else {
 set_property top soc_top [current_fileset]
 set_property generic [list CPU_KHZ=[expr {int(250000000.0 / $tck)}] ROM_INIT=\"$rom\"] [current_fileset]
+}
 if {$strategy ne ""} { set_property strategy $strategy [get_runs impl_1] }
 update_compile_order -fileset sources_1
 
