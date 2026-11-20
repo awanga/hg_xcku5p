@@ -27,6 +27,7 @@ step ruff-check ruff check . --exclude build
 step ruff-format ruff format --check . --exclude build
 step dts bash tests/dts/run.sh
 step xbar_map python3 tests/dts/xbar_map.py
+step tools python3 -m unittest discover -s tests/tools -p "test_*.py"
 step rootfs bash tests/rootfs/run.sh
 [ "${1:-}" = "--quick" ] || step rtl bash tests/rtl/run.sh
 

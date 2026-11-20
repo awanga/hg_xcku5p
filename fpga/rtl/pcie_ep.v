@@ -108,7 +108,32 @@ module pcie_ep (
     output wire [1:0]  c_rresp,
     output wire        c_rvalid,
     input  wire        c_rready,
-    output wire        irq             // host doorbell pending and enabled (level, per_clk)
+`ifdef NOCPU
+    // CPU-less build (decision 0008, variant 3): the host's BAR0 (64 KiB) is a master port onto the peripheral crossbar (AXI4-Lite, per_clk); offset = low 16
+    // address bits, the crossbar window being 0xF8000000. The host-side port of the register block is idle then (its registers are at BAR0 + 0xA000 via c_*).
+    output wire [15:0] hl_awaddr,
+    output wire        hl_awvalid,
+    input  wire        hl_awready,
+    output wire [31:0] hl_wdata,
+    output wire [3:0]  hl_wstrb,
+    output wire        hl_wvalid,
+    input  wire        hl_wready,
+    input  wire [1:0]  hl_bresp,
+    input  wire        hl_bvalid,
+    output wire        hl_bready,
+    output wire [15:0] hl_araddr,
+    output wire        hl_arvalid,
+    input  wire        hl_arready,
+    input  wire [31:0] hl_rdata,
+    input  wire [1:0]  hl_rresp,
+    input  wire        hl_rvalid,
+    output wire        hl_rready,
+`endif
+    output wire        irq,            // host doorbell pending and enabled (level, per_clk)
+    // user interrupts to the host: uirq[i] is a level from any clock domain; vector i+1 (vector 0 is the CPU doorbell); uirq_pend = request outstanding
+    input  wire [6:0]  uirq,
+    output wire [6:0]  uirq_pend,
+    output wire [6:0]  uirq_seen    // the levels as seen in the PCIe clock domain (also with no link, when requests are not raised)
 );
     // ------------------------------------------------------------ pins
     wire sys_clk, sys_clk_gt, perst_n;
@@ -117,8 +142,8 @@ module pcie_ep (
 
     // ------------------------------------------------------------ XDMA core
     wire        axi_aclk, axi_aresetn, user_lnk_up;
-    wire [3:0]  usr_irq_ack;
-    reg  [3:0]  usr_irq_req;
+    wire [7:0]  usr_irq_ack;
+    wire [7:0]  usr_irq_req;
     wire [3:0]  x_awid, x_bid, x_arid, x_rid;
     wire [63:0] x_awaddr, x_araddr;
     wire [7:0]  x_awlen, x_arlen;
@@ -290,35 +315,65 @@ module pcie_ep (
     wire cpu_db_any;
     pcie_regs u_regs (
         .clk(per_clk), .rst_n(per_rst_n),
+        `ifdef NOCPU
+        .h_awaddr(7'd0), .h_awvalid(1'b0), .h_awready(), .h_wdata(32'd0), .h_wstrb(4'd0), .h_wvalid(1'b0), .h_wready(), .h_bresp(), .h_bvalid(),
+        .h_bready(1'b1), .h_araddr(7'd0), .h_arvalid(1'b0), .h_arready(), .h_rdata(), .h_rresp(), .h_rvalid(), .h_rready(1'b1),
+`else
         .h_awaddr(h_awaddr[6:0]), .h_awvalid(h_awvalid), .h_awready(h_awready), .h_wdata(h_wdata), .h_wstrb(h_wstrb), .h_wvalid(h_wvalid),
         .h_wready(h_wready), .h_bresp(h_bresp), .h_bvalid(h_bvalid), .h_bready(h_bready),
         .h_araddr(h_araddr[6:0]), .h_arvalid(h_arvalid), .h_arready(h_arready), .h_rdata(h_rdata), .h_rresp(h_rresp), .h_rvalid(h_rvalid),
         .h_rready(h_rready),
+`endif
         .c_awaddr(c_awaddr), .c_awvalid(c_awvalid), .c_awready(c_awready), .c_wdata(c_wdata), .c_wstrb(c_wstrb), .c_wvalid(c_wvalid),
         .c_wready(c_wready), .c_bresp(c_bresp), .c_bvalid(c_bvalid), .c_bready(c_bready),
         .c_araddr(c_araddr), .c_arvalid(c_arvalid), .c_arready(c_arready), .c_rdata(c_rdata), .c_rresp(c_rresp), .c_rvalid(c_rvalid),
         .c_rready(c_rready),
         .link_up_a(user_lnk_up), .aclk_toggle_a(aclk_tog), .perst_n_a(perst_n),
         .win_base(win_base_p), .win_size(win_size_p), .irq(irq), .cpu_db_any(cpu_db_any));
+`ifdef NOCPU
+    assign hl_awaddr = h_awaddr[15:0];
+    assign hl_awvalid = h_awvalid;
+    assign h_awready = hl_awready;
+    assign hl_wdata = h_wdata;
+    assign hl_wstrb = h_wstrb;
+    assign hl_wvalid = h_wvalid;
+    assign h_wready = hl_wready;
+    assign h_bresp = hl_bresp;
+    assign h_bvalid = hl_bvalid;
+    assign hl_bready = h_bready;
+    assign hl_araddr = h_araddr[15:0];
+    assign hl_arvalid = h_arvalid;
+    assign h_arready = hl_arready;
+    assign h_rdata = hl_rdata;
+    assign h_rresp = hl_rresp;
+    assign h_rvalid = hl_rvalid;
+    assign hl_rready = h_rready;
+    wire unused_h = &{1'b0, h_awaddr[31:16], h_araddr[31:16], h_awprot, h_arprot};
+`else
     // unused high address / protection bits of the host window
     wire unused_h = &{1'b0, h_awaddr[31:7], h_araddr[31:7], h_awprot, h_arprot};
+`endif
 
-    // ------------------------------------------------------------ CPU -> host interrupt: user interrupt 0 while a CPU doorbell bit is pending
-    (* ASYNC_REG = "TRUE" *) reg [1:0] db_s;
-    reg acked;
-    always @(posedge axi_aclk) begin
-        db_s <= {db_s[0], cpu_db_any};
-        if (!axi_aresetn) begin
-            usr_irq_req <= 4'd0;
-            acked <= 1'b0;
-        end else begin
-            if (!db_s[1]) begin
-                usr_irq_req[0] <= 1'b0;
-                acked <= 1'b0;
-            end else if (usr_irq_ack[0]) begin
-                usr_irq_req[0] <= 1'b0;
-                acked <= 1'b1;
-            end else if (!acked) usr_irq_req[0] <= 1'b1;
+    // ------------------------------------------------------------ interrupts to the host (MSI/INTx through the XDMA user interrupts, 8 vectors)
+    // vector 0: a CPU doorbell bit is pending; vectors 1..7: uirq[0..6] (irq_req.v: one request per assertion)
+    wire seen0;
+    wire [6:0] seen_u;
+    irq_req u_irq0 (.clk(axi_aclk), .rst_n(axi_aresetn), .lvl(cpu_db_any), .ack(usr_irq_ack[0]), .req(usr_irq_req[0]), .seen(seen0));
+    genvar gi;
+    generate
+        for (gi = 0; gi < 7; gi = gi + 1) begin : g_uirq
+            irq_req u_irq (.clk(axi_aclk), .rst_n(axi_aresetn), .lvl(uirq[gi]), .ack(usr_irq_ack[gi+1]), .req(usr_irq_req[gi+1]), .seen(seen_u[gi]));
         end
+    endgenerate
+    // requests in flight, back to the register clock for the user block (two flops; a level that changes only when software acts)
+    (* ASYNC_REG = "TRUE" *) reg [6:0] pend_s1, pend_s2, seen_s1, seen_s2;
+    always @(posedge per_clk) begin
+        pend_s1 <= usr_irq_req[7:1];
+        pend_s2 <= pend_s1;
+        seen_s1 <= seen_u;
+        seen_s2 <= seen_s1;
     end
+    assign uirq_pend = pend_s2;
+    assign uirq_seen = seen_s2;
+    wire unused_seen0 = seen0;
 endmodule

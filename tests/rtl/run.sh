@@ -539,5 +539,141 @@ mut_cc() { # name sed-expression
 mut_cc cc_busy "s/if (ack_s\[1\] == req) busy <= 1'b0;/if (ack_s[1] == req) busy <= 1'b1;/"
 mut_cc cc_rst "s/            q <= {W{1'b0}};//"
 mut_cc cc_noack "s/ack <= req_s\[1\];/ack <= ack;/"
+# uart_rig (UART test rig of the CPU-less variant) with uart_rx and uart_tx
+rg=$here/fpga/rtl/uart_rig.v
+rx_=$here/fpga/rtl/uart_rx.v
+tx_=$here/fpga/rtl/uart_tx.v
+tbr=$here/tests/rtl/tb_uart_rig.v
+verilator --lint-only -Wall -Wno-DECLFILENAME "$rg" "$rx_" "$tx_" >"$b/lint_rig.log" 2>&1 && echo "PASS lint uart_rig" || {
+	echo "FAIL lint uart_rig"; head "$b/lint_rig.log"; fail=1; }
+run_rg() { # name rig-file rx-file expect [iverilog args]
+	local n=$1 d=$2 r=$3 e=$4
+	shift 4
+	iverilog -g2005 "$@" -o "$b/$n.vvp" "$tbr" "$d" "$r" "$tx_" >"$b/$n.build.log" 2>&1 || { echo "FAIL $n (build)"; fail=1; return; }
+	timeout 280 vvp "$b/$n.vvp" >"$b/$n.log" 2>&1
+	grep -aq "TBRESULT.* $e\$" "$b/$n.log" && echo "PASS $n [icarus, expect $e: $(grep -a TBRESULT "$b/$n.log" | cut -d' ' -f2-3)]" || {
+		echo "FAIL $n [expected $e]"; grep -E 'TBRESULT|FAIL' "$b/$n.log" | head -3; fail=1; }
+}
+run_rg uart_rig "$rg" "$rx_" PASS
+run_rg uart_rig_slow "$rg" "$rx_" PASS -P tb_uart_rig.LAT=9
+verilator --binary --timing -Wno-fatal -Wno-DECLFILENAME --top-module tb_uart_rig --Mdir "$b/vl_rig" "$tbr" "$rg" "$rx_" "$tx_" >"$b/vl_rig.build.log" 2>&1 || {
+	echo "FAIL uart_rig (verilator build)"; fail=1; }
+timeout 280 "$b/vl_rig/Vtb_uart_rig" >"$b/vl_rig.log" 2>&1
+grep -q "TBRESULT.* PASS\$" "$b/vl_rig.log" && echo "PASS uart_rig [verilator]" || { echo "FAIL uart_rig [verilator]"; fail=1; }
+mut_rg() { # name sed-expression
+	sed "$2" "$rg" >"$b/mut_$1.v"
+	cmp -s "$rg" "$b/mut_$1.v" && { echo "FAIL mutant $1 unchanged"; fail=1; }
+	run_rg "mut_$1" "$b/mut_$1.v" "$rx_" FAIL
+}
+mut_rx() { # name sed-expression
+	sed "$2" "$rx_" >"$b/mut_$1.v"
+	cmp -s "$rx_" "$b/mut_$1.v" && { echo "FAIL mutant $1 unchanged"; fail=1; }
+	run_rg "mut_$1" "$rg" "$b/mut_$1.v" FAIL
+}
+mut_rg rg_lane "s/32'h0000000F << {addr\[4:2\], 2'b00}/32'h0000000F << {addr[3:2], 2'b00}/"
+mut_rg rg_rlane "s/m_rdata >> {addr\[4:2\], 5'd0}/m_rdata >> {3'd0, 5'd0}/"
+mut_rg rg_bresp "s/if (selm ? (m_bresp != 2'b00) : (p_bresp != 2'b00)) send_err;/if (selm ? 1'b0 : (p_bresp != 2'b00)) send_err;/"
+mut_rg rg_rresp "s/if (selm ? (m_rresp != 2'b00) : (p_rresp != 2'b00)) send_err;/if (selm ? 1'b0 : (p_rresp != 2'b00)) send_err;/"
+mut_rg rg_stride "s/wire \[31:0\] addr_n = addr + 32'd4;/wire [31:0] addr_n = addr + 32'd8;/; s/addr <= addr + 32'd4;/addr <= addr + 32'd8;/"
+mut_rg rg_digits "s/nd < 4'd8/nd < 4'd9/"
+mut_rg rg_busy "s/if (rxv \&\& !busy) begin/if (rxv) begin/"
+mut_rg rg_case "s/cmd <= (rxd >= \"a\" \&\& rxd <= \"z\") ? rxd - 8'h20 : rxd;/cmd <= rxd;/"
+mut_rg rg_win "s/if (a0\[31:30\] == 2'b01) begin aw_m <= 1'b1; w_m <= 1'b1; end/if (a0[31:30] == 2'b11) begin aw_m <= 1'b1; w_m <= 1'b1; end/"
+mut_rg rg_align "s/\"R\": if (na == 2'd1 \&\& a0\[1:0\] == 2'b00)/\"R\": if (na == 2'd1)/"
+mut_rg rg_zero "s/ \&\& a1 != 32'd0 \&\& a1 <= 32'hFFFF//"
+mut_rg rg_cross "s/selm <= (addr_n\[31:30\] == 2'b01);//"
+mut_rx rx_mid "s/cnt <= CLKS_PER_BIT \/ 2 - 1;/cnt <= CLKS_PER_BIT - 1;/"
+mut_rx rx_stop "s/valid <= rs\[1\];/valid <= 1'b1;/"
+mut_rx rx_glitch "s/else if (rs\[1\]) st <= S_IDLE;/else if (1'b0) st <= S_IDLE;/"
+
+# ---- card_regs / user_regs (CPU-less PCIe card register blocks)
+cr_=$here/fpga/rtl/card_regs.v
+ur_=$here/fpga/rtl/user_regs.v
+tbc=$here/tests/rtl/tb_card.v
+run_cd() { # name card_regs.v user_regs.v expect
+	iverilog -g2005 -o "$b/$1.vvp" "$tbc" "$2" "$3" "$ai" >"$b/$1.build.log" 2>&1 || { echo "FAIL $1 (build)"; fail=1; return; }
+	timeout 120 vvp "$b/$1.vvp" >"$b/$1.log" 2>&1
+	grep -aq "TBRESULT.* $4\$" "$b/$1.log" && echo "PASS $1 [icarus, expect $4: $(grep -a TBRESULT "$b/$1.log" | cut -d' ' -f2-3)]" || {
+		echo "FAIL $1 [expected $4]"; grep -aE 'TBRESULT|MISMATCH' "$b/$1.log" | head -3; fail=1; }
+}
+verilator --lint-only -Wall -Wno-DECLFILENAME -Wno-MULTITOP "$cr_" "$ur_" "$ai" >"$b/lint_card.log" 2>&1 && echo "PASS lint card" || {
+	echo "FAIL lint card"; head "$b/lint_card.log"; fail=1; }
+verilator --binary --timing -Wno-fatal -Wno-DECLFILENAME --top-module tb_card --Mdir "$b/vl_card" "$tbc" "$cr_" "$ur_" "$ai" >"$b/vl_card.build.log" 2>&1 &&
+	"$b/vl_card/Vtb_card" >"$b/vl_card.log" 2>&1
+grep -aq "TBRESULT.* PASS\$" "$b/vl_card.log" && echo "PASS card [verilator]" || { echo "FAIL card [verilator]"; fail=1; }
+run_cd card "$cr_" "$ur_" PASS
+mut_cd() { # name file(card|user) sed-expression
+	local f=$cr_; [ "$2" = user ] && f=$ur_
+	sed "$3" "$f" >"$b/mut_$1.v"
+	cmp -s "$f" "$b/mut_$1.v" && { echo "FAIL mutant $1 unchanged"; fail=1; return; }
+	if [ "$2" = user ]; then run_cd "mut_$1" "$cr_" "$b/mut_$1.v" FAIL; else run_cd "mut_$1" "$b/mut_$1.v" "$ur_" FAIL; fi
+}
+mut_cd cd_ro card "s/10'h0B) begin/10'h0B || addr[11:2] == 10'h00) begin/"
+mut_cd cd_strb card "s/if (wstrb\[1\]) scratch\[15:8\] <= wdata\[15:8\];/scratch[15:8] <= wdata[15:8];/"
+mut_cd cd_sync card "s/10'h08: rdata <= {30'd0, key_s\[1\], calib_s\[1\]};/10'h08: rdata <= {30'd0, calib_s[1], key_s[1]};/"
+mut_cd cd_sec card "s/tick == CLK_HZ - 32'd1/tick == CLK_HZ/"
+mut_cd cd_led card "s/10'h0C \&\& wstrb\[0\]) led_q/10'h0C) led_q/"
+mut_cd cd_rst card "s/            scratch <= 32'd0;/            scratch <= scratch;/"
+mut_cd ud_kick user "s/^        kick <= 32'd0;//"
+mut_cd ud_w1c user "s/events <= (events | event_in) \& ~wdata;/events <= wdata;/"
+mut_cd ud_sts user "s/rdata <= sts\[32\*addr\[5:2\] +: 32\];/rdata <= sts[32*addr[4:1] +: 32];/"
+mut_cd ud_irq user "s/assign irq = |(events \& ien);/assign irq = |events;/"
+mut_cd ud_ctl user "s/if (wstrb\[i\]) ctl_q/ctl_q/"
+mut_cd ud_decode user "s/if (w < 10'd16) begin/if (w < 10'd17) begin/"
+# ---- irq_req (user interrupt request toward the XDMA core)
+iq_=$here/fpga/rtl/irq_req.v
+tbq=$here/tests/rtl/tb_irq_req.v
+run_iq() { # name irq_req.v expect
+	iverilog -g2005 -o "$b/$1.vvp" "$tbq" "$2" >"$b/$1.build.log" 2>&1 || { echo "FAIL $1 (build)"; fail=1; return; }
+	timeout 60 vvp "$b/$1.vvp" >"$b/$1.log" 2>&1
+	grep -aq "TBRESULT.* $3\$" "$b/$1.log" && echo "PASS $1 [icarus, expect $3: $(grep -a TBRESULT "$b/$1.log" | cut -d' ' -f2-3)]" || { echo "FAIL $1 [expected $3]"; fail=1; }
+}
+verilator --lint-only -Wall -Wno-DECLFILENAME "$iq_" >"$b/lint_irq.log" 2>&1 && echo "PASS lint irq_req" || { echo "FAIL lint irq_req"; head "$b/lint_irq.log"; fail=1; }
+run_iq irq_req "$iq_" PASS
+mut_iq() { sed "$2" "$iq_" >"$b/mut_$1.v"; cmp -s "$iq_" "$b/mut_$1.v" && { echo "FAIL mutant $1 unchanged"; fail=1; return; }; run_iq "mut_$1" "$b/mut_$1.v" FAIL; }
+mut_iq iq_rearm "s/else if (!acked) req <= 1'b1;/else req <= 1'b1;/"
+mut_iq iq_noack "s/acked <= 1'b1;/acked <= 1'b0;/"
+mut_iq iq_seen "s/assign seen = s\[1\];/assign seen = req;/"
+mut_iq iq_nosync "s/if (!s\[1\]) begin/if (!lvl) begin/"
+
+# ---- user_ip / mem_probe (reference function block: registers, interrupts, DDR4 master ports with a self-test)
+up_=$here/fpga/rtl/user_ip.v
+mp_=$here/fpga/rtl/mem_probe.v
+tbu=$here/tests/rtl/tb_uip.v
+run_up() { # name user_ip.v mem_probe.v expect
+	iverilog -g2005 -o "$b/$1.vvp" "$tbu" "$2" "$3" "$ai" >"$b/$1.build.log" 2>&1 || { echo "FAIL $1 (build)"; fail=1; return; }
+	timeout 300 vvp "$b/$1.vvp" >"$b/$1.log" 2>&1
+	grep -aq "TBRESULT.* $4\$" "$b/$1.log" && echo "PASS $1 [icarus, expect $4: $(grep -a TBRESULT "$b/$1.log" | cut -d' ' -f2-3)]" || {
+		echo "FAIL $1 [expected $4]"; grep -aE 'TBRESULT|MISMATCH' "$b/$1.log" | head -3; fail=1; }
+}
+verilator --lint-only -Wall -Wno-DECLFILENAME -Wno-MULTITOP "$up_" "$mp_" "$ai" >"$b/lint_uip.log" 2>&1 && echo "PASS lint user_ip" || { echo "FAIL lint user_ip"; head -20 "$b/lint_uip.log"; fail=1; }
+verilator --binary --timing -Wno-fatal -Wno-DECLFILENAME --top-module tb_uip --Mdir "$b/vl_uip" "$tbu" "$up_" "$mp_" "$ai" >"$b/vl_uip.build.log" 2>&1 &&
+	"$b/vl_uip/Vtb_uip" >"$b/vl_uip.log" 2>&1
+grep -aq "TBRESULT.* PASS\$" "$b/vl_uip.log" && echo "PASS user_ip [verilator]" || { echo "FAIL user_ip [verilator]"; fail=1; }
+run_up user_ip "$up_" "$mp_" PASS
+mut_up() { # name file(ip|probe) sed-expression
+	local f=$up_; [ "$2" = probe ] && f=$mp_
+	sed "$3" "$f" >"$b/mut_$1.v"
+	cmp -s "$f" "$b/mut_$1.v" && { echo "FAIL mutant $1 unchanged"; fail=1; return; }
+	if [ "$2" = probe ]; then run_up "mut_$1" "$up_" "$b/mut_$1.v" FAIL; else run_up "mut_$1" "$b/mut_$1.v" "$mp_" FAIL; fi
+}
+mut_up mp_len probe "s/left_now > 20'd16) ? 8'd15/left_now > 20'd17) ? 8'd16/"
+mut_up mp_seed probe "s/wbase <= wbase + 32'd8;/wbase <= wbase + 32'd4;/"
+mut_up mp_lane probe "s/lanes\[32\*j +: 32\] = b + j;/lanes[32*j +: 32] = b + 7 - j;/"
+mut_up mp_cmp probe "s/mism_c <= rd_v \&\& (rd_q != exp_q);/mism_c <= 1'b0;/"
+mut_up mp_ebase probe "s/ebase <= ebase + 32'd8;/ebase <= ebase + 32'd4;/"
+mut_up mp_err probe "s/if (m_bresp != 2'b00) res_err <= 1'b1;//"
+mut_up mp_mask probe "s/{wdata\[31:9\], 9'd0}/{wdata[31:5], 5'd0}/"
+mut_up mp_stride probe "s/m_awaddr + 32'd512/m_awaddr + 32'd256/"
+mut_up mp_rdcyc probe "s/if (res_busy \&\& (st == RAR || st == RDATA)) res_rd <= res_rd + 32'd1;//"
+mut_up mp_zero probe "s/(wdata\[19:0\] == 20'd0) ? 20'd1 : wdata\[19:0\]/wdata[19:0]/"
+mut_up mp_clr probe "s/if (wdata\[1\]) clr_t <= ~clr_t;//"
+mut_up ui_strb ip "s/ \&\& wstrb == 4'hF) irq_set/) irq_set/"
+mut_up ui_pend ip "s/6'h03: rdata <= {{(32-UIRQ){1'b0}}, irq_pend};/6'h03: rdata <= {{(32-UIRQ){1'b0}}, irq_set};/"
+mut_up us_strb ip "s/12'h005 \&\& wstrb == 4'hF/12'h005/"
+mut_up us_mask ip "s/start <= wdata\[UMEM-1:0\];/start <= {{(UMEM-1){1'b0}}, wdata[0]};/"
+mut_up us_seen ip "s/6'h04: rdata <= {{(32-UIRQ){1'b0}}, irq_seen};/6'h04: rdata <= {{(32-UIRQ){1'b0}}, irq_pend};/"
+mut_up us_go probe "s/if (go_ext \&\& !busy_s\[1\]) go_t <= ~go_t;//"
+mut_up ui_stride ip "s/addr\[13:6\] - 8'd4/addr[13:6] - 8'd3/"
 [ "$fail" = 0 ] && echo "ALL PASS" || echo "FAILURES"
 exit "$fail"
