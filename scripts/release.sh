@@ -1,7 +1,7 @@
 #!/bin/bash
 # SPDX-License-Identifier: MIT
 # Package release artifacts with a manifest and SHA-256 checksums. Nothing is published or tagged here.
-# usage: scripts/release.sh <version> <flash-ready.bit> [outdir]
+# usage: [CARD_BIT=card.bit CARD_FLASH=card_flash.bit] scripts/release.sh <version> <flash-ready.bit> [outdir]
 #   <flash-ready.bit> comes from fpga/scripts/flash_bit.tcl (the bitstream that goes into the config flash).
 # Reads build/linux (build_sd.sh output) and the pins in docs/versions.md; refuses a dirty tree.
 set -eu
@@ -42,6 +42,20 @@ $here/factory/README.md docs/recovery-factory.md
 $here/factory/restore.sh recovery/restore.sh
 $here/factory/vendor_flash_16MiB.sha256 recovery/vendor_flash_16MiB.sha256
 "
+# optional: the CPU-less PCIe card build (CARD_BIT = its soc.bit, CARD_FLASH = its flash image from scripts/card_flash_image.sh)
+if [ -n "${CARD_BIT:-}" ] || [ -n "${CARD_FLASH:-}" ]; then
+	[ -f "${CARD_BIT:-/nonexistent}" ] && [ -f "${CARD_FLASH:-/nonexistent}" ] || { echo "CARD_BIT and CARD_FLASH must both name files" >&2; exit 1; }
+	files="$files
+$CARD_BIT card/card.bit
+$CARD_FLASH card/card_flash.bit
+$here/fpga/pcie_identity.cfg card/pcie_identity.cfg
+$here/docs/card-adaptation.md docs/card-adaptation.md
+$here/docs/validation/pcie-flash-enumeration.md docs/pcie-flash-enumeration.md
+$here/tools/card_smoke.py tools/card_smoke.py
+$here/tools/pcie_identity.py tools/pcie_identity.py
+$here/tools/rig.py tools/rig.py
+"
+fi
 rm -rf "$out"
 mkdir -p "$out"
 missing=0
