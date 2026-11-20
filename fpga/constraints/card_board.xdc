@@ -23,3 +23,18 @@ set_false_path -to [get_pins -hierarchical -filter {NAME =~ *u_cregs/key_s_reg[0
 # PCIe host doorbell level from per_clk into the rig's interrupt vector (ui_clk): first stage of a two-flop synchroniser
 set_false_path -to [get_pins u_irq_sync/s1_reg[*]/D]
 set_false_path -to [get_ports {led[*]}]
+
+# user_ip self-test engines (mem_probe): the first flop of each synchroniser between the register clock and the DDR4 user clock, the configuration words the
+# engine samples at the start of a run (stable for many clocks before, software contract) and the results read after DONE (stable then)
+set_false_path -to [get_pins -hierarchical -filter {NAME =~ *u_probe/go_s_reg[0]/D}]
+set_false_path -to [get_pins -hierarchical -filter {NAME =~ *u_probe/clr_s_reg[0]/D}]
+set_false_path -to [get_pins -hierarchical -filter {NAME =~ *u_probe/busy_s_reg[0]/D}]
+set_false_path -to [get_pins -hierarchical -filter {NAME =~ *u_probe/done_s_reg[0]/D}]
+set_false_path -to [get_pins -hierarchical -filter {NAME =~ *u_probe/err_s_reg[0]/D}]
+set_max_delay -datapath_only 3.0 -from [get_cells -hierarchical -filter {NAME =~ *u_probe/cfg_*_reg*}]
+set_max_delay -datapath_only 10.0 -from [get_cells -hierarchical -filter {NAME =~ *u_probe/res_mism_reg* || NAME =~ *u_probe/res_wr_reg* || NAME =~ *u_probe/res_rd_reg*}] -to [get_cells -hierarchical -filter {NAME =~ u_uip/rdata_reg*}]
+# user interrupt requests in flight, back from the PCIe clock to the register clock (pcie_ep): first flop of the two-flop synchroniser
+set_false_path -to [get_pins -hierarchical -filter {NAME =~ u_pcie/pend_s1_reg[*]/D}]
+set_false_path -to [get_pins -hierarchical -filter {NAME =~ u_pcie/seen_s1_reg[*]/D}]
+# user interrupt levels from the register clock into the PCIe clock (irq_req): first flop of the synchroniser
+set_false_path -to [get_pins -hierarchical -filter {NAME =~ u_pcie/*/s_reg[0]/D}]

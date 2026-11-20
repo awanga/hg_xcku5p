@@ -17,7 +17,9 @@ module card_top #(
     parameter [31:0] CARD_BUILD = 32'd0,
     parameter [31:0] PCI_ID = 32'h903410EE,
     parameter [31:0] PCI_CLASS = 32'h05800000,
-    parameter [31:0] PCI_SUBSYS = 32'h000710EE
+    parameter [31:0] PCI_SUBSYS = 32'h000710EE,
+    parameter UMEM = 2,   // user DDR4 master ports (1..15; build_soc.tcl -umem N creates the crossbar for the same number)
+    parameter UIRQ = 6    // user interrupt lines to the host (1..6)
 ) (
     input  wire        clk50,
     input  wire        c0_sys_clk_p,
@@ -139,10 +141,96 @@ module card_top #(
         .dma_bus_rvalid(dma_rvalid), .dma_bus_rready(dma_rready), .dma_bus_rdata(dma_rdata), .dma_bus_rid(dma_rid),
         .dma_bus_rresp(dma_rresp), .dma_bus_rlast(dma_rlast));
 
-    // ---------------------------------------------------------------- memory path: DDR4 controller (256-bit AXI4 at ui_clk)
+    // ---------------------------------------------------------------- memory path: crossbar (rig + PCIe DMA from nocpu_core, UMEM user ports) -> DDR4 controller
+    // xbar_mem (build_soc.tcl, 1 + UMEM slaves, 4-bit slave ids): the master id is {slave number, id}, at most 8 bits for UMEM <= 15
+    function integer clog2(input integer v);
+        integer i;
+        begin
+            clog2 = 0;
+            for (i = v - 1; i > 0; i = i >> 1) clog2 = clog2 + 1;
+        end
+    endfunction
+    localparam NSI = 1 + UMEM;
+    localparam MIDW = 4 + clog2(NSI);
+    wire        dd_awvalid, dd_awready, dd_wvalid, dd_wready, dd_wlast, dd_bvalid, dd_bready;
+    wire        dd_arvalid, dd_arready, dd_rvalid, dd_rready, dd_rlast;
+    wire [31:0] dd_awaddr, dd_araddr;
+    wire [MIDW-1:0] dd_awid_x, dd_arid_x, dd_bid_x, dd_rid_x;
+    wire [7:0]  dd_awid = {{(8-MIDW){1'b0}}, dd_awid_x};
+    wire [7:0]  dd_arid = {{(8-MIDW){1'b0}}, dd_arid_x};
+    wire [7:0]  dd_bid, dd_rid;
+    assign dd_bid_x = dd_bid[MIDW-1:0];
+    assign dd_rid_x = dd_rid[MIDW-1:0];
+    wire [7:0]  dd_awlen, dd_arlen;
+    wire [2:0]  dd_awsize, dd_arsize;
+    wire [1:0]  dd_awburst, dd_arburst, dd_bresp, dd_rresp;
+    wire [255:0] dd_wdata, dd_rdata;
+    wire [31:0] dd_wstrb;
+
+    wire [32*UMEM-1:0] ua_awaddr, ua_araddr, ua_wstrb;
+    wire [8*UMEM-1:0]  ua_awlen, ua_arlen;
+    wire [3*UMEM-1:0]  ua_awsize, ua_arsize;
+    wire [2*UMEM-1:0]  ua_awburst, ua_arburst, ua_bresp, ua_rresp;
+    wire [4*UMEM-1:0]  ua_awid, ua_arid, ua_bid, ua_rid;
+    wire [UMEM-1:0]    ua_awvalid, ua_awready, ua_wlast, ua_wvalid, ua_wready, ua_bvalid, ua_bready;
+    wire [UMEM-1:0]    ua_arvalid, ua_arready, ua_rlast, ua_rvalid, ua_rready;
+    wire [256*UMEM-1:0] ua_wdata, ua_rdata;
+
+    wire [NSI-1:0]      xm_awready, xm_wready, xm_bvalid, xm_arready, xm_rvalid, xm_rlast;
+    wire [2*NSI-1:0]    xm_bresp, xm_rresp;
+    wire [4*NSI-1:0]    xm_bid, xm_rid;
+    wire [256*NSI-1:0]  xm_rdata;
+    xbar_mem u_xbar_mem (
+        .aclk(cpu_clk), .aresetn(cpu_rst_n),
+        .s_axi_awid({ua_awid, m_awid[3:0]}), .s_axi_awaddr({ua_awaddr, m_awaddr}), .s_axi_awlen({ua_awlen, m_awlen}), .s_axi_awsize({ua_awsize, m_awsize}),
+        .s_axi_awburst({ua_awburst, m_awburst}), .s_axi_awlock({NSI{1'b0}}), .s_axi_awcache({NSI{4'd0}}), .s_axi_awprot({NSI{3'd0}}), .s_axi_awqos({NSI{4'd0}}),
+        .s_axi_awvalid({ua_awvalid, m_awvalid}), .s_axi_awready(xm_awready),
+        .s_axi_wdata({ua_wdata, m_wdata}), .s_axi_wstrb({ua_wstrb, m_wstrb}), .s_axi_wlast({ua_wlast, m_wlast}),
+        .s_axi_wvalid({ua_wvalid, m_wvalid}), .s_axi_wready(xm_wready),
+        .s_axi_bid(xm_bid), .s_axi_bresp(xm_bresp), .s_axi_bvalid(xm_bvalid), .s_axi_bready({ua_bready, m_bready}),
+        .s_axi_arid({ua_arid, m_arid[3:0]}), .s_axi_araddr({ua_araddr, m_araddr}), .s_axi_arlen({ua_arlen, m_arlen}), .s_axi_arsize({ua_arsize, m_arsize}),
+        .s_axi_arburst({ua_arburst, m_arburst}), .s_axi_arlock({NSI{1'b0}}), .s_axi_arcache({NSI{4'd0}}), .s_axi_arprot({NSI{3'd0}}), .s_axi_arqos({NSI{4'd0}}),
+        .s_axi_arvalid({ua_arvalid, m_arvalid}), .s_axi_arready(xm_arready),
+        .s_axi_rid(xm_rid), .s_axi_rdata(xm_rdata), .s_axi_rresp(xm_rresp), .s_axi_rlast(xm_rlast), .s_axi_rvalid(xm_rvalid),
+        .s_axi_rready({ua_rready, m_rready}),
+        .m_axi_awid(dd_awid_x), .m_axi_awaddr(dd_awaddr), .m_axi_awlen(dd_awlen), .m_axi_awsize(dd_awsize), .m_axi_awburst(dd_awburst),
+        .m_axi_awlock(), .m_axi_awcache(), .m_axi_awprot(), .m_axi_awqos(), .m_axi_awvalid(dd_awvalid), .m_axi_awready(dd_awready),
+        .m_axi_wdata(dd_wdata), .m_axi_wstrb(dd_wstrb), .m_axi_wlast(dd_wlast), .m_axi_wvalid(dd_wvalid), .m_axi_wready(dd_wready),
+        .m_axi_bid(dd_bid_x), .m_axi_bresp(dd_bresp), .m_axi_bvalid(dd_bvalid), .m_axi_bready(dd_bready),
+        .m_axi_arid(dd_arid_x), .m_axi_araddr(dd_araddr), .m_axi_arlen(dd_arlen), .m_axi_arsize(dd_arsize), .m_axi_arburst(dd_arburst),
+        .m_axi_arlock(), .m_axi_arcache(), .m_axi_arprot(), .m_axi_arqos(), .m_axi_arvalid(dd_arvalid), .m_axi_arready(dd_arready),
+        .m_axi_rid(dd_rid_x), .m_axi_rdata(dd_rdata), .m_axi_rresp(dd_rresp), .m_axi_rlast(dd_rlast), .m_axi_rvalid(dd_rvalid),
+        .m_axi_rready(dd_rready));
+    assign m_awready = xm_awready[0];
+    assign ua_awready = xm_awready[NSI-1:1];
+    assign m_wready = xm_wready[0];
+    assign ua_wready = xm_wready[NSI-1:1];
+    assign m_bvalid = xm_bvalid[0];
+    assign ua_bvalid = xm_bvalid[NSI-1:1];
+    assign m_bresp = xm_bresp[1:0];
+    assign ua_bresp = xm_bresp[2*NSI-1:2];
+    assign m_bid = {4'd0, xm_bid[3:0]};
+    assign ua_bid = xm_bid[4*NSI-1:4];
+    assign m_arready = xm_arready[0];
+    assign ua_arready = xm_arready[NSI-1:1];
+    assign m_rvalid = xm_rvalid[0];
+    assign ua_rvalid = xm_rvalid[NSI-1:1];
+    assign m_rlast = xm_rlast[0];
+    assign ua_rlast = xm_rlast[NSI-1:1];
+    assign m_rdata = xm_rdata[255:0];
+    assign ua_rdata = xm_rdata[256*NSI-1:256];
+    assign m_rresp = xm_rresp[1:0];
+    assign ua_rresp = xm_rresp[2*NSI-1:2];
+    assign m_rid = {4'd0, xm_rid[3:0]};
+    assign ua_rid = xm_rid[4*NSI-1:4];
+    /* verilator lint_off UNUSEDSIGNAL */
+    wire unused_mid = &{1'b0, m_awid[7:4], m_arid[7:4]};
+    /* verilator lint_on UNUSEDSIGNAL */
+
+    // ---------------------------------------------------------------- DDR4 controller (256-bit AXI4 at ui_clk)
     assign c0_ddr4_par = 1'b0;   // CA parity is disabled in the controller; DDR4 needs a valid level on PAR
-    wire [29:0] d_awaddr = m_awaddr[29:0];
-    wire [29:0] d_araddr = m_araddr[29:0];
+    wire [29:0] d_awaddr = dd_awaddr[29:0];
+    wire [29:0] d_araddr = dd_araddr[29:0];
     ddr4_0 u_ddr4 (
         .c0_init_calib_complete(calib),
         .dbg_clk(),
@@ -166,43 +254,43 @@ module card_top #(
         .c0_ddr4_ui_clk(ui_clk),
         .c0_ddr4_ui_clk_sync_rst(ui_rst),
         .c0_ddr4_aresetn(ui_rst_n),
-        .c0_ddr4_s_axi_awid(m_awid),
+        .c0_ddr4_s_axi_awid(dd_awid),
         .c0_ddr4_s_axi_awaddr(d_awaddr),
-        .c0_ddr4_s_axi_awlen(m_awlen),
-        .c0_ddr4_s_axi_awsize(m_awsize),
-        .c0_ddr4_s_axi_awburst(m_awburst),
+        .c0_ddr4_s_axi_awlen(dd_awlen),
+        .c0_ddr4_s_axi_awsize(dd_awsize),
+        .c0_ddr4_s_axi_awburst(dd_awburst),
         .c0_ddr4_s_axi_awlock(1'b0),
         .c0_ddr4_s_axi_awcache(4'd0),
         .c0_ddr4_s_axi_awprot(3'd0),
         .c0_ddr4_s_axi_awqos(4'd0),
-        .c0_ddr4_s_axi_awvalid(m_awvalid),
-        .c0_ddr4_s_axi_awready(m_awready),
-        .c0_ddr4_s_axi_wdata(m_wdata),
-        .c0_ddr4_s_axi_wstrb(m_wstrb),
-        .c0_ddr4_s_axi_wlast(m_wlast),
-        .c0_ddr4_s_axi_wvalid(m_wvalid),
-        .c0_ddr4_s_axi_wready(m_wready),
-        .c0_ddr4_s_axi_bready(m_bready),
-        .c0_ddr4_s_axi_bid(m_bid),
-        .c0_ddr4_s_axi_bresp(m_bresp),
-        .c0_ddr4_s_axi_bvalid(m_bvalid),
-        .c0_ddr4_s_axi_arid(m_arid),
+        .c0_ddr4_s_axi_awvalid(dd_awvalid),
+        .c0_ddr4_s_axi_awready(dd_awready),
+        .c0_ddr4_s_axi_wdata(dd_wdata),
+        .c0_ddr4_s_axi_wstrb(dd_wstrb),
+        .c0_ddr4_s_axi_wlast(dd_wlast),
+        .c0_ddr4_s_axi_wvalid(dd_wvalid),
+        .c0_ddr4_s_axi_wready(dd_wready),
+        .c0_ddr4_s_axi_bready(dd_bready),
+        .c0_ddr4_s_axi_bid(dd_bid),
+        .c0_ddr4_s_axi_bresp(dd_bresp),
+        .c0_ddr4_s_axi_bvalid(dd_bvalid),
+        .c0_ddr4_s_axi_arid(dd_arid),
         .c0_ddr4_s_axi_araddr(d_araddr),
-        .c0_ddr4_s_axi_arlen(m_arlen),
-        .c0_ddr4_s_axi_arsize(m_arsize),
-        .c0_ddr4_s_axi_arburst(m_arburst),
+        .c0_ddr4_s_axi_arlen(dd_arlen),
+        .c0_ddr4_s_axi_arsize(dd_arsize),
+        .c0_ddr4_s_axi_arburst(dd_arburst),
         .c0_ddr4_s_axi_arlock(1'b0),
         .c0_ddr4_s_axi_arcache(4'd0),
         .c0_ddr4_s_axi_arprot(3'd0),
         .c0_ddr4_s_axi_arqos(4'd0),
-        .c0_ddr4_s_axi_arvalid(m_arvalid),
-        .c0_ddr4_s_axi_arready(m_arready),
-        .c0_ddr4_s_axi_rready(m_rready),
-        .c0_ddr4_s_axi_rlast(m_rlast),
-        .c0_ddr4_s_axi_rvalid(m_rvalid),
-        .c0_ddr4_s_axi_rresp(m_rresp),
-        .c0_ddr4_s_axi_rid(m_rid),
-        .c0_ddr4_s_axi_rdata(m_rdata),
+        .c0_ddr4_s_axi_arvalid(dd_arvalid),
+        .c0_ddr4_s_axi_arready(dd_arready),
+        .c0_ddr4_s_axi_rready(dd_rready),
+        .c0_ddr4_s_axi_rlast(dd_rlast),
+        .c0_ddr4_s_axi_rvalid(dd_rvalid),
+        .c0_ddr4_s_axi_rresp(dd_rresp),
+        .c0_ddr4_s_axi_rid(dd_rid),
+        .c0_ddr4_s_axi_rdata(dd_rdata),
         .sys_rst(key_rst));
 
     // ---------------------------------------------------------------- register path: rig (cpu_clk) -> cc_per -> crossbar (per_clk); the host's BAR0 is the second master
@@ -299,14 +387,27 @@ module card_top #(
         .s_rdata(x_rdata[63:32]), .s_rresp(x_rresp[3:2]), .s_rvalid(x_rvalid[1]), .s_rready(x_rready[1]),
         .ctl(user_ctl), .sts(512'd0), .kick(user_kick), .event_in(32'd0), .irq(user_irq));
 
-    // Window for a future function block: replace user_ip with the new IP's register interface (BAR0 + 0x4000, 16 KiB).
-    user_ip u_uip (
+    // Reference function block (fpga/rtl/user_ip.v): register window BAR0 + 0x4000, UIRQ interrupt lines to the host, UMEM DDR4 master ports.
+    // A new IP replaces its body and keeps these connections.
+    wire [UIRQ-1:0] ip_irq;
+    wire [6:0]      uirq_pend, uirq_seen;
+    wire [6:0]      uirq_all = ({7'd0, ip_irq} << 1) | {6'd0, user_irq};   // vector 1 = user_regs, 2.. = user_ip
+    user_ip #(.UMEM(UMEM), .UIRQ(UIRQ)) u_uip (
         .clk(per_clk), .rst_n(per_rst_n),
         .s_awaddr(x_awaddr[109:96]), .s_awvalid(x_awvalid[3]), .s_awready(x_awready[3]),
         .s_wdata(x_wdata[127:96]), .s_wstrb(x_wstrb[15:12]), .s_wvalid(x_wvalid[3]), .s_wready(x_wready[3]),
         .s_bresp(x_bresp[7:6]), .s_bvalid(x_bvalid[3]), .s_bready(x_bready[3]),
         .s_araddr(x_araddr[109:96]), .s_arvalid(x_arvalid[3]), .s_arready(x_arready[3]),
-        .s_rdata(x_rdata[127:96]), .s_rresp(x_rresp[7:6]), .s_rvalid(x_rvalid[3]), .s_rready(x_rready[3]));
+        .s_rdata(x_rdata[127:96]), .s_rresp(x_rresp[7:6]), .s_rvalid(x_rvalid[3]), .s_rready(x_rready[3]),
+        .irq(ip_irq), .irq_pend(uirq_pend[UIRQ:1]), .irq_seen(uirq_seen[UIRQ:1]),
+        .mclk(cpu_clk), .mrst_n(cpu_rst_n),
+        .m_awaddr(ua_awaddr), .m_awlen(ua_awlen), .m_awsize(ua_awsize), .m_awburst(ua_awburst), .m_awid(ua_awid),
+        .m_awvalid(ua_awvalid), .m_awready(ua_awready),
+        .m_wdata(ua_wdata), .m_wstrb(ua_wstrb), .m_wlast(ua_wlast), .m_wvalid(ua_wvalid), .m_wready(ua_wready),
+        .m_bid(ua_bid), .m_bresp(ua_bresp), .m_bvalid(ua_bvalid), .m_bready(ua_bready),
+        .m_araddr(ua_araddr), .m_arlen(ua_arlen), .m_arsize(ua_arsize), .m_arburst(ua_arburst), .m_arid(ua_arid),
+        .m_arvalid(ua_arvalid), .m_arready(ua_arready),
+        .m_rid(ua_rid), .m_rdata(ua_rdata), .m_rresp(ua_rresp), .m_rlast(ua_rlast), .m_rvalid(ua_rvalid), .m_rready(ua_rready));
 
     // ---------------------------------------------------------------- PCIe endpoint: the XDMA master goes straight to the hub DMA port of nocpu_core
     pcie_ep u_pcie (
@@ -328,10 +429,10 @@ module card_top #(
         .hl_wready(hl_wready), .hl_bresp(hl_bresp), .hl_bvalid(hl_bvalid), .hl_bready(hl_bready),
         .hl_araddr(hl_araddr), .hl_arvalid(hl_arvalid), .hl_arready(hl_arready), .hl_rdata(hl_rdata), .hl_rresp(hl_rresp), .hl_rvalid(hl_rvalid),
         .hl_rready(hl_rready),
-        .irq(pcie_irq));
+        .irq(pcie_irq), .uirq(uirq_all), .uirq_pend(uirq_pend), .uirq_seen(uirq_seen));
 
-    // user_ctl, user_kick and user_irq have no consumer yet
+    // user_ctl and user_kick have no consumer yet
     /* verilator lint_off UNUSEDSIGNAL */
-    wire unused_user = ^user_ctl ^ ^user_kick ^ user_irq;
+    wire unused_user = ^user_ctl ^ ^user_kick;
     /* verilator lint_on UNUSEDSIGNAL */
 endmodule

@@ -23,6 +23,15 @@ set ddr8g [expr {[lsearch $argv "-ddr8g"] >= 0}]
 set pcie [expr {[lsearch $argv "-pcie"] >= 0}]
 set vpcie [expr {[lsearch $argv "-vpcie"] >= 0}]
 set card [expr {[lsearch $argv "-card"] >= 0}]
+# -umem N: number of user DDR4 master ports of the card build (user_ip), 1..15 (default 2); -uirq N: user interrupt lines to the host, 1..6 (default 6)
+set umem 2
+set i [lsearch $argv "-umem"]
+if {$i >= 0} { set umem [lindex $argv [expr {$i + 1}]] }
+set uirq 6
+set i [lsearch $argv "-uirq"]
+if {$i >= 0} { set uirq [lindex $argv [expr {$i + 1}]] }
+if {$card && (![string is integer -strict $umem] || $umem < 1 || $umem > 15)} { error "-umem N needs 1..15 (crossbar of 1 + N slaves, ids of at most 8 bits)" }
+if {$card && (![string is integer -strict $uirq] || $uirq < 1 || $uirq > 6)} { error "-uirq N needs 1..6 (XDMA user interrupt vectors 2..7)" }
 set nocpu [expr {[lsearch $argv "-nocpu"] >= 0 || $card}]
 if {$card} { set pcie 1 }
 if {$card && $vpcie} { error "-card and -vpcie are different variants (docs/decisions/0008)" }
@@ -96,6 +105,12 @@ if {$card} {
         CONFIG.M02_A00_BASE_ADDR 0x00000000F800A000 CONFIG.M02_A00_ADDR_WIDTH 12 \
         CONFIG.M03_A00_BASE_ADDR 0x00000000F8004000 CONFIG.M03_A00_ADDR_WIDTH 14] [get_ips xbar_card]
 }
+if {$card} {
+    # memory crossbar of the card: SI0 = rig and PCIe DMA (nocpu_core), SI1..N = user ports (user_ip); one master, the DDR4 controller; 256-bit, 4-bit slave ids
+    create_ip -name axi_crossbar -vendor xilinx.com -library ip -module_name xbar_mem
+    set_property -dict [list CONFIG.PROTOCOL AXI4 CONFIG.NUM_SI [expr {1 + $umem}] CONFIG.NUM_MI 1 CONFIG.ADDR_WIDTH 32 CONFIG.DATA_WIDTH 256 CONFIG.ID_WIDTH 4 \
+        CONFIG.M00_A00_BASE_ADDR 0x0000000000000000 CONFIG.M00_A00_ADDR_WIDTH 32] [get_ips xbar_mem]
+}
 if {$vpcie} {
     # the DMA engine's clock converter (per_clk -> CPU clock) and the shared hub DMA port crossbar (SI2 = the engine)
     create_ip -name axi_clock_converter -vendor xilinx.com -library ip -module_name vdma_cc
@@ -136,7 +151,7 @@ if {$pcie} {
 set liteeth $root/build/liteeth/gateware/liteeth_core.v
 if {!$card && ![file exists $liteeth]} { error "missing $liteeth: run fpga/scripts/gen_liteeth.sh" }
 if {$card} {
-    add_files [list $root/fpga/rtl/card_top.v $root/fpga/rtl/card_regs.v $root/fpga/rtl/user_regs.v $root/fpga/rtl/user_ip.v $root/fpga/rtl/axil_simple.v $root/fpga/rtl/irq_sync.v]
+    add_files [list $root/fpga/rtl/card_top.v $root/fpga/rtl/card_regs.v $root/fpga/rtl/user_regs.v $root/fpga/rtl/user_ip.v $root/fpga/rtl/mem_probe.v $root/fpga/rtl/axil_simple.v $root/fpga/rtl/irq_sync.v]
 } else {
 add_files [list $root/fpga/rtl/soc_top.v $root/fpga/rtl/axil_simple.v $root/fpga/rtl/boot_rom.v \
     $root/fpga/rtl/soc_regs.v $root/fpga/rtl/spi_sifive.v $root/fpga/rtl/eth_addr_map.v $root/fpga/rtl/irq_pulse.v $root/fpga/rtl/irq_sync.v $root/fpga/rtl/gmii_rx_reg.v $root/fpga/rtl/drp_reader.v $root/fpga/rtl/ddr_halfmap.v $root/fpga/rtl/board_gpio_map.v $root/fpga/rtl/irq_hold.v $root/fpga/rtl/eth_dma.v $root/fpga/rtl/hdmi_out.v $root/fpga/rtl/hdmi_timing.v $root/fpga/rtl/hdmi_fetch.v $root/fpga/rtl/hdmi_linebuf.v $root/fpga/rtl/tmds_encoder.v $root/fpga/rtl/tmds_ser.v $root/fpga/rtl/clk_freq_meter.v \
@@ -155,7 +170,7 @@ if {$card} {
         $root/fpga/constraints/soc_board.xdc]
 }
 if {$pcie} {
-    add_files [list $root/fpga/rtl/pcie_ep.v $root/fpga/rtl/pcie_regs.v $root/fpga/rtl/axi_win.v $root/fpga/rtl/cdc_cfg.v]
+    add_files [list $root/fpga/rtl/pcie_ep.v $root/fpga/rtl/irq_req.v $root/fpga/rtl/pcie_regs.v $root/fpga/rtl/axi_win.v $root/fpga/rtl/cdc_cfg.v]
     add_files -fileset constrs_1 $root/fpga/constraints/pcie.xdc
 }
 if {$vpcie} {
@@ -177,7 +192,7 @@ if {$card} {
     catch {set build [expr {"0x[exec git -C $root rev-parse --short=8 HEAD]"}]}
     set idg [exec python3 $root/tools/pcie_identity.py generics]
     set_property top card_top [current_fileset]
-    set_property generic [concat [list CARD_VERSION=32'h[format %08X [expr {($vmaj << 16) | ($vmin << 8) | $vpat}]] CARD_BUILD=32'h[format %08X $build]] $idg] [current_fileset]
+    set_property generic [concat [list UMEM=$umem UIRQ=$uirq CARD_VERSION=32'h[format %08X [expr {($vmaj << 16) | ($vmin << 8) | $vpat}]] CARD_BUILD=32'h[format %08X $build]] $idg] [current_fileset]
 } else {
 set_property top soc_top [current_fileset]
 set_property generic [list CPU_KHZ=[expr {int(250000000.0 / $tck)}] ROM_INIT=\"$rom\"] [current_fileset]
