@@ -12,7 +12,7 @@
 | Verilator | 5.032 (Debian) | distro package | simulation and lint only | 2026-11-12 |
 | Icarus Verilog | 12.0 | distro package | unit tests | 2026-11-12 |
 | Yosys / SymbiYosys | 0.52 / local sby | distro / local | no formal harness committed yet | 2026-11-12 |
-| openFPGALoader | board access (JTAG, flash); see docs/validation/flash-boot.md for the options used | github.com/trabucayre/openFPGALoader | local tool, version not pinned yet | 2026-11-12 |
+| openFPGALoader | board access (JTAG, flash); see docs/validation/flash-boot.md for the options used | github.com/trabucayre/openFPGALoader | v0.13.1 (installed 2026-11-20; flash writes, JTAG loads and `-r` reconfigure verified with it) | 2026-11-20 |
 
 Sources are fetched at these commits by `scripts/fetch_sources.sh` (keep the script and this table in sync).
 VexRiscv-SMP (pythondata-cpu-vexriscv_smp 0b753ec) and CVA6 (2ef1c1b) were used for the CPU study only and are not part of any build.
