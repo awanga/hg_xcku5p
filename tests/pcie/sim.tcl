@@ -21,6 +21,8 @@ set rtl {pcie_ep irq_req pcie_regs axi_win axil_simple cdc_cfg}
 foreach m $rtl { add_files -norecurse $root/fpga/rtl/$m.v }
 # optional mutant: PCIE_WIN_RTL=<file> replaces axi_win.v (a test must fail on it)
 if {[info exists ::env(PCIE_WIN_RTL)]} { remove_files $root/fpga/rtl/axi_win.v; add_files -norecurse $::env(PCIE_WIN_RTL) }
+# optional mutant: PCIE_EP_RTL=<file> replaces pcie_ep.v (the test must fail on it)
+if {[info exists ::env(PCIE_EP_RTL)]} { remove_files $root/fpga/rtl/pcie_ep.v; add_files -norecurse $::env(PCIE_EP_RTL) }
 add_files -norecurse $root/tests/pcie/xilinx_dma_pcie_ep.v
 set bench {}
 foreach f {pcie_4_0_rp sys_clk_gen sys_clk_gen_ds usp_pci_exp_usrapp_cfg usp_pci_exp_usrapp_com usp_pci_exp_usrapp_rx usp_pci_exp_usrapp_tx

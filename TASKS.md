@@ -24,7 +24,7 @@
 
 - Status (2026-11-20): v0.4.1 released (tag on main; CPU-less card build `-card` with reference function block, user interrupts, `-umem N` DDR4 ports; PCIe identity from `fpga/pcie_identity.cfg`).
   Config flash holds a `-vpcie` build from develop (vv_vpc4f, flash-boot smoke PASS). Package build/release/0.4.1 (32 files, includes the card images). Older status entries moved to HISTORY.md.
-  Next: docs/v1.0-plan.md (proposed v1.0 scope, open items sorted into agent / owner / decisions; owner decisions D1-D5 pending). Flash-boot soak: 40/40 passed, 400-cycle run in progress (build/soak.sh).
+  Next: docs/v1.0-plan.md (proposed v1.0 scope, open items sorted into agent / owner / decisions; owner decisions D1-D5 pending). Flash-boot soak: 40/40 passed (owner skipped the longer run).
 
 ## Status legend
 
