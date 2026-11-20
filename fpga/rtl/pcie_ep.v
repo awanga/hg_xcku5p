@@ -129,7 +129,11 @@ module pcie_ep (
     input  wire        hl_rvalid,
     output wire        hl_rready,
 `endif
-    output wire        irq             // host doorbell pending and enabled (level, per_clk)
+    output wire        irq,            // host doorbell pending and enabled (level, per_clk)
+    // user interrupts to the host: uirq[i] is a level from any clock domain; vector i+1 (vector 0 is the CPU doorbell); uirq_pend = request outstanding
+    input  wire [6:0]  uirq,
+    output wire [6:0]  uirq_pend,
+    output wire [6:0]  uirq_seen    // the levels as seen in the PCIe clock domain (also with no link, when requests are not raised)
 );
     // ------------------------------------------------------------ pins
     wire sys_clk, sys_clk_gt, perst_n;
@@ -138,8 +142,8 @@ module pcie_ep (
 
     // ------------------------------------------------------------ XDMA core
     wire        axi_aclk, axi_aresetn, user_lnk_up;
-    wire [3:0]  usr_irq_ack;
-    reg  [3:0]  usr_irq_req;
+    wire [7:0]  usr_irq_ack;
+    wire [7:0]  usr_irq_req;
     wire [3:0]  x_awid, x_bid, x_arid, x_rid;
     wire [63:0] x_awaddr, x_araddr;
     wire [7:0]  x_awlen, x_arlen;
@@ -350,22 +354,26 @@ module pcie_ep (
     wire unused_h = &{1'b0, h_awaddr[31:7], h_araddr[31:7], h_awprot, h_arprot};
 `endif
 
-    // ------------------------------------------------------------ CPU -> host interrupt: user interrupt 0 while a CPU doorbell bit is pending
-    (* ASYNC_REG = "TRUE" *) reg [1:0] db_s;
-    reg acked;
-    always @(posedge axi_aclk) begin
-        db_s <= {db_s[0], cpu_db_any};
-        if (!axi_aresetn) begin
-            usr_irq_req <= 4'd0;
-            acked <= 1'b0;
-        end else begin
-            if (!db_s[1]) begin
-                usr_irq_req[0] <= 1'b0;
-                acked <= 1'b0;
-            end else if (usr_irq_ack[0]) begin
-                usr_irq_req[0] <= 1'b0;
-                acked <= 1'b1;
-            end else if (!acked) usr_irq_req[0] <= 1'b1;
+    // ------------------------------------------------------------ interrupts to the host (MSI/INTx through the XDMA user interrupts, 8 vectors)
+    // vector 0: a CPU doorbell bit is pending; vectors 1..7: uirq[0..6] (irq_req.v: one request per assertion)
+    wire seen0;
+    wire [6:0] seen_u;
+    irq_req u_irq0 (.clk(axi_aclk), .rst_n(axi_aresetn), .lvl(cpu_db_any), .ack(usr_irq_ack[0]), .req(usr_irq_req[0]), .seen(seen0));
+    genvar gi;
+    generate
+        for (gi = 0; gi < 7; gi = gi + 1) begin : g_uirq
+            irq_req u_irq (.clk(axi_aclk), .rst_n(axi_aresetn), .lvl(uirq[gi]), .ack(usr_irq_ack[gi+1]), .req(usr_irq_req[gi+1]), .seen(seen_u[gi]));
         end
+    endgenerate
+    // requests in flight, back to the register clock for the user block (two flops; a level that changes only when software acts)
+    (* ASYNC_REG = "TRUE" *) reg [6:0] pend_s1, pend_s2, seen_s1, seen_s2;
+    always @(posedge per_clk) begin
+        pend_s1 <= usr_irq_req[7:1];
+        pend_s2 <= pend_s1;
+        seen_s1 <= seen_u;
+        seen_s2 <= seen_s1;
     end
+    assign uirq_pend = pend_s2;
+    assign uirq_seen = seen_s2;
+    wire unused_seen0 = seen0;
 endmodule

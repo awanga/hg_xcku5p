@@ -51,7 +51,7 @@ proc make_xdma {name dir {pipe 0}} {
         CONFIG.axilite_master_scale Kilobytes \
         CONFIG.xdma_rnum_chnl 1 \
         CONFIG.xdma_wnum_chnl 1 \
-        CONFIG.xdma_num_usr_irq 4 \
+        CONFIG.xdma_num_usr_irq 8 \
         CONFIG.pf0_msi_enabled true \
         CONFIG.cfg_mgmt_if false \
         CONFIG.pipe_sim [expr {$pipe ? "true" : "false"}] \

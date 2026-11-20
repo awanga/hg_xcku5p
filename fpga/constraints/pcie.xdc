@@ -30,4 +30,4 @@ set_max_delay -datapath_only -from [get_cells -hier -filter {NAME =~ *u_cdc_win/
 set_false_path -to [get_cells -hier -filter {NAME =~ *u_regs/link_s_reg*}]
 set_false_path -to [get_cells -hier -filter {NAME =~ *u_regs/tog_s_reg*}]
 set_false_path -to [get_cells -hier -filter {NAME =~ *u_regs/perst_s_reg*}]
-set_false_path -to [get_cells -hier -filter {NAME =~ *u_pcie/db_s_reg*}]
+set_false_path -to [get_cells -hier -filter {NAME =~ *u_pcie/u_irq0/s_reg*}]

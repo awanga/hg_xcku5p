@@ -17,7 +17,7 @@ source $root/fpga/scripts/pcie/xdma_ip.tcl
 make_xdma xdma_0 $simdir/ip 1
 make_pcie_converters
 generate_target all [get_ips]
-set rtl {pcie_ep pcie_regs axi_win axil_simple cdc_cfg}
+set rtl {pcie_ep irq_req pcie_regs axi_win axil_simple cdc_cfg}
 foreach m $rtl { add_files -norecurse $root/fpga/rtl/$m.v }
 # optional mutant: PCIE_WIN_RTL=<file> replaces axi_win.v (a test must fail on it)
 if {[info exists ::env(PCIE_WIN_RTL)]} { remove_files $root/fpga/rtl/axi_win.v; add_files -norecurse $::env(PCIE_WIN_RTL) }

@@ -176,7 +176,7 @@ module xilinx_dma_pcie_ep #(
         .hl_araddr(hl_araddr), .hl_arvalid(hl_arvalid), .hl_arready(hl_arready), .hl_rdata(hl_rdata), .hl_rresp(hl_rresp), .hl_rvalid(hl_rvalid),
         .hl_rready(hl_rready),
 `endif
-        .c_rready(c_rready), .irq(irq));
+        .c_rready(c_rready), .irq(irq), .uirq(7'd0), .uirq_pend(), .uirq_seen());
 
     // ---------------------------------------------------------------- the SoC memory: 64 KiB, one burst at a time, deterministic stalls
     reg [7:0] mem [0:65535];

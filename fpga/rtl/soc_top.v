@@ -802,7 +802,7 @@ ddr4_0 u_ddr4 (
         .hl_araddr(hl_araddr), .hl_arvalid(hl_arvalid), .hl_arready(hl_arready), .hl_rdata(hl_rdata), .hl_rresp(hl_rresp), .hl_rvalid(hl_rvalid),
         .hl_rready(hl_rready),
 `endif
-        .irq(pcie_irq));
+        .irq(pcie_irq), .uirq(7'd0), .uirq_pend(), .uirq_seen());
 `endif
 `else
     // without PCIe: the two masters go straight to the hub port

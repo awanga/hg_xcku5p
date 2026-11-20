@@ -52,14 +52,14 @@ else if (testname == "pcie_ep_regs") begin : t_regs
         while (board.EP.u_ep.usr_irq_req[0] !== 1'b1 && n < 400) begin #10000; n = n + 1; end
         if (board.EP.u_ep.usr_irq_req[0] !== 1'b1) begin errs = errs + 1; $display("ERROR: no user interrupt request"); end
         n = 0;
-        while (board.EP.u_ep.acked !== 1'b1 && n < 4000) begin #10000; n = n + 1; end
-        if (board.EP.u_ep.acked !== 1'b1) begin errs = errs + 1; $display("ERROR: user interrupt not acknowledged"); end
+        while (board.EP.u_ep.u_irq0.acked !== 1'b1 && n < 4000) begin #10000; n = n + 1; end
+        if (board.EP.u_ep.u_irq0.acked !== 1'b1) begin errs = errs + 1; $display("ERROR: user interrupt not acknowledged"); end
         board.EP.host_rd(32'h0C);
         if (board.EP.host_rdata !== 32'h1) begin errs = errs + 1; $display("ERROR: CPU_DB seen by host %h", board.EP.host_rdata); end
         board.EP.host_wr(32'h0C, 32'h1);                  // host acknowledges
         n = 0;
-        while (board.EP.u_ep.acked !== 1'b0 && n < 400) begin #10000; n = n + 1; end
-        if (board.EP.u_ep.usr_irq_req[0] !== 1'b0 || board.EP.u_ep.acked !== 1'b0) begin errs = errs + 1; $display("ERROR: user interrupt not released"); end
+        while (board.EP.u_ep.u_irq0.acked !== 1'b0 && n < 400) begin #10000; n = n + 1; end
+        if (board.EP.u_ep.usr_irq_req[0] !== 1'b0 || board.EP.u_ep.u_irq0.acked !== 1'b0) begin errs = errs + 1; $display("ERROR: user interrupt not released"); end
 
         // the write counter counts register writes by the host only: this test issued three (mailbox, HOST_DB, CPU_DB); the CPU's writes and the
         // XDMA register writes (a different BAR) are not counted
