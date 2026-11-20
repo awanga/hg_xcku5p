@@ -187,6 +187,12 @@ else if (testname == "pcie_ep_nocpu") begin : t_nocpu
         board.EP.host_rd(32'h2020);
         if (board.EP.host_rdata !== 32'h12345678) begin errs = errs + 1; $display("ERROR: readback %h", board.EP.host_rdata); end
         if (board.EP.hmem[32'h2024 / 4] !== 32'hC0DE0000 + 32'h2024 / 4) begin errs = errs + 1; $display("ERROR: the neighbouring word changed"); end
+        // writes in the upper half of BAR0 (address bit 15 and the last word): the port address is the low 16 bits of the host offset
+        board.EP.host_wr(32'hA074, 32'h0BADCAFE);
+        if (board.EP.hmem[32'hA074 / 4] !== 32'h0BADCAFE || board.EP.hl_last_wa !== 16'hA074) begin errs = errs + 1; $display("ERROR: write at 0xA074: data %h address %h", board.EP.hmem[32'hA074 / 4], board.EP.hl_last_wa); end
+        board.EP.host_wr(32'hFFFC, 32'hFEEDBEEF);
+        if (board.EP.hmem[32'hFFFC / 4] !== 32'hFEEDBEEF || board.EP.hl_last_wa !== 16'hFFFC) begin errs = errs + 1; $display("ERROR: write at 0xFFFC: data %h address %h", board.EP.hmem[32'hFFFC / 4], board.EP.hl_last_wa); end
+        if (board.EP.hl_wr_n - wr0 !== 3) begin errs = errs + 1; $display("ERROR: %0d writes reached the port, expected 3", board.EP.hl_wr_n - wr0); end
 
         // the register block is reachable by the CPU side and its host side sees no traffic (host write count stays 0)
         board.EP.cpu_read(7'h00);
